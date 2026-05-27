@@ -54,3 +54,40 @@ pagos) endurecida con CrowdSec (IPS), Wazuh (HIDS/SIEM), Suricata (IDS) y Zabbix
     agents+bouncers en los demás (`config.yaml.local`, `profiles.yaml`,
     `scenarios/`, `acquis.d/`).
   - **Monitorización (Zabbix):** `vps*/etc/zabbix/zabbix_agent2.conf`.
+
+## Cómo el agente ejecuta comandos (modelo → contenedor Kali)
+
+Punto clave de diseño: **el LLM no se conecta al contenedor.** El modelo solo
+genera texto (`Thought:` + `Action:`); una capa Python determinista parsea esa
+acción, opcionalmente la veta, y la ejecuta. El modelo nunca tiene acceso de red
+ni al host — solo produce texto.
+
+Flujo de una iteración del bucle ReAct:
+
+1. **Inferencia.** El bucle pide la siguiente acción al LLM (Qwen3 servido por
+   vLLM, endpoint OpenAI-compatible): cliente en
+   `orquestador/utils/model_client.py:13` (`QWEN3_URL`) y `:60` (el `POST`),
+   invocado desde `orquestador/tools/react_loop.py:264`
+   (`await ask_whiterabbit_chat(...)`).
+2. **Parseo.** Se extrae el comando del texto del modelo con una regex:
+   `orquestador/tools/react_loop.py:24` (`RE_ACTION`) → `:270`
+   (`_parsear_respuesta`).
+3. **Revisión (opcional).** Un *Critic* adversarial puede **vetar** la acción
+   antes de ejecutarla: `orquestador/tools/react_loop.py:284-309`.
+4. **Ejecución en el contenedor Kali (`pentest-tools`).** Aquí el orquestador
+   "se conecta" al contenedor, vía **`docker exec`** (no SSH, no socket del
+   modelo): `orquestador/tools/react_loop.py:313`
+   (`await ejecutar_comando(...)`) → `orquestador/tools/runner.py:47`
+   (`ejecutar_comando`), con la llamada concreta en **`runner.py:68-69`**:
+   `asyncio.create_subprocess_exec("docker", "exec", <container>, "sh", "-c", comando)`.
+   El contenedor vivo se resuelve en `runner.py:23` (`_container_name`, vía
+   `docker ps` por label de servicio Swarm).
+5. **Observación.** La salida real (stdout/stderr/returncode) se formatea
+   (`react_loop.py:314`, `_formatear_observation`) y vuelve al modelo como
+   `Observation:` para la siguiente iteración (`:329`).
+
+**Aislamiento del contenedor** (`orquestador/tools/runner.py:3-6`): es efímero
+por engagement; el confinamiento descansa en (a) cgroups del contenedor,
+(b) filtrado de egress con iptables según el scope autorizado
+(`orquestador/tools/scope_guard.py`), y (c) destrucción/recreación del
+contenedor al cerrar el engagement (`runner.py:94`, `reiniciar_container`).
