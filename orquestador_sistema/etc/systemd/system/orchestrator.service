@@ -1,0 +1,30 @@
+[Unit]
+Description=AI Pentest Orchestrator (FastAPI on :8000)
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+
+[Service]
+Type=simple
+User=auditor
+Group=auditor
+WorkingDirectory=/home/auditor/ai_pentest/orchestrator
+EnvironmentFile=/home/auditor/ai_pentest/orchestrator/.env
+ExecStart=/home/auditor/ai_pentest/orchestrator/venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+RestartSec=5
+# El orquestador llama a vLLM en :8001/:8002 (mismo host).
+# Si los modelos aún no están listos, FastAPI arranca igual y devuelve 5xx
+# hasta que estén disponibles — comportamiento aceptado.
+
+# Seguridad básica
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/auditor/ai_pentest/orchestrator /home/auditor/.cache/huggingface
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

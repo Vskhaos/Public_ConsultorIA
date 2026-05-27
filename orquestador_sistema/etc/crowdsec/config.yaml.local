@@ -1,0 +1,5 @@
+# CrowdSec orchestrator: solo AGENT. LAPI vive en VPS3 vía tunnel SSH.
+api:
+  server:
+    enable: false
+    online_client: null

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>{{ titulo }}</title>
+<style>
+@page {
+  size: A4;
+  margin: 22mm 18mm 22mm 18mm;
+  @top-left { content: "{{ marca }}"; font-family: 'DejaVu Sans', sans-serif; font-size: 8.5pt; color: #6b6b6b; letter-spacing: 1px; }
+  @top-right { content: "{{ tipo_titulo }}"; font-family: 'DejaVu Sans', sans-serif; font-size: 8.5pt; color: #6b6b6b; }
+  @bottom-left { content: "Confidencial — {{ cliente }}"; font-family: 'DejaVu Sans', sans-serif; font-size: 8pt; color: #6b6b6b; }
+  @bottom-right { content: "Página " counter(page) " de " counter(pages); font-family: 'DejaVu Sans', sans-serif; font-size: 8pt; color: #6b6b6b; }
+}
+@page :first {
+  @top-left { content: ""; }
+  @top-right { content: ""; }
+  @bottom-left { content: ""; }
+  @bottom-right { content: ""; }
+}
+html, body {
+  font-family: 'DejaVu Sans', 'Helvetica', sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.45;
+  color: #1f2933;
+  margin: 0;
+}
+h1, h2, h3, h4 {
+  font-family: 'DejaVu Sans', sans-serif;
+  font-weight: 700;
+  color: #0d3b66;
+  margin: 1.3em 0 0.4em 0;
+  page-break-after: avoid;
+}
+h1 { font-size: 18pt; border-bottom: 2px solid #0d3b66; padding-bottom: 4px; }
+h2 { font-size: 14pt; border-bottom: 1px solid #c2cbd6; padding-bottom: 2px; }
+h3 { font-size: 12pt; color: #1f57a4; }
+h4 { font-size: 11pt; color: #2a4d6e; }
+p { margin: 0.4em 0 0.6em 0; }
+strong { color: #0d3b66; }
+em { color: #555; }
+code, pre {
+  font-family: 'DejaVu Sans Mono', monospace;
+  background: #f3f5f8;
+  border: 1px solid #dfe4eb;
+  border-radius: 3px;
+  font-size: 9pt;
+  color: #102a43;
+}
+code { padding: 1px 4px; }
+pre {
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  page-break-inside: avoid;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.6em 0 1em 0;
+  font-size: 10pt;
+  page-break-inside: avoid;
+}
+th, td {
+  border: 1px solid #c2cbd6;
+  padding: 6px 9px;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  background: #e8eef5;
+  color: #0d3b66;
+  font-weight: 700;
+}
+tr:nth-child(even) td { background: #f8fafc; }
+ul, ol { padding-left: 22px; margin: 0.4em 0 0.7em 0; }
+li { margin: 0.15em 0; }
+blockquote {
+  margin: 0.6em 0;
+  padding: 6px 14px;
+  border-left: 4px solid #c2cbd6;
+  color: #4a5568;
+  background: #f8fafc;
+}
+hr { border: 0; border-top: 1px solid #c2cbd6; margin: 1em 0; }
+
+/* Portada */
+.cover {
+  page-break-after: always;
+  padding: 80px 0 0 0;
+  text-align: left;
+}
+.cover .brand {
+  font-family: 'DejaVu Sans', sans-serif;
+  font-size: 10pt;
+  letter-spacing: 4px;
+  color: #1f57a4;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.cover h1 {
+  font-size: 28pt;
+  color: #0d3b66;
+  border: 0;
+  margin: 12px 0 6px 0;
+}
+.cover .subtitle {
+  font-size: 14pt;
+  color: #2a4d6e;
+  margin-bottom: 50px;
+}
+.cover .info-box {
+  border: 1px solid #c2cbd6;
+  border-left: 5px solid #0d3b66;
+  padding: 18px 22px;
+  background: #f8fafc;
+  font-size: 10.5pt;
+  margin-bottom: 40px;
+}
+.cover .info-row { display: flex; padding: 4px 0; }
+.cover .info-label { width: 130px; color: #6b6b6b; font-weight: 700; text-transform: uppercase; font-size: 9pt; letter-spacing: 0.5px; }
+.cover .info-value { flex: 1; color: #1f2933; }
+
+.cover .footer {
+  position: absolute;
+  bottom: 30mm;
+  left: 18mm;
+  right: 18mm;
+  font-size: 9pt;
+  color: #6b6b6b;
+  border-top: 1px solid #c2cbd6;
+  padding-top: 8px;
+}
+
+/* Contenido tras portada */
+.content { page-break-before: always; }
+.content h1:first-of-type { margin-top: 0; }
+
+/* Severity badges (si la IA los pone como "Severidad: critica") */
+em:contains("crítica"), em:contains("critica") { color: #c0392b; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="brand">{{ marca }}</div>
+  <h1>{{ titulo }}</h1>
+  <div class="subtitle">{{ subtitulo }}</div>
+
+  <div class="info-box">
+    <div class="info-row"><div class="info-label">Cliente</div><div class="info-value">{{ cliente }}</div></div>
+    <div class="info-row"><div class="info-label">Objetivo</div><div class="info-value">{{ objetivo }}</div></div>
+    <div class="info-row"><div class="info-label">Tipo</div><div class="info-value">{{ tipo_audit }}</div></div>
+    <div class="info-row"><div class="info-label">Referencia</div><div class="info-value">{{ ref }}</div></div>
+    <div class="info-row"><div class="info-label">Fecha emisión</div><div class="info-value">{{ fecha_emision }}</div></div>
+    <div class="info-row"><div class="info-label">Equipo auditor</div><div class="info-value">{{ equipo }}</div></div>
+    <div class="info-row"><div class="info-label">Versión</div><div class="info-value">{{ version_doc }}</div></div>
+    <div class="info-row"><div class="info-label">Clasificación</div><div class="info-value">Confidencial — uso exclusivo del cliente</div></div>
+  </div>
+
+  <div class="footer">
+    Este documento contiene información confidencial obtenida durante una auditoría
+    de seguridad autorizada. Su distribución está restringida al cliente y a
+    personal autorizado. Reproducción total o parcial prohibida sin consentimiento
+    expreso de {{ marca }}.
+  </div>
+</div>
+
+<div class="content">
+{{ cuerpo|safe }}
+</div>
+
+</body>
+</html>

@@ -1,0 +1,9 @@
+name: consultor/trusted-hosts-whitelist
+description: "Trusted infra IPs (tuneles SSH inter-host + admin) - evita autobloqueo"
+whitelist:
+  reason: "trusted infra: VPS1/VPS3/VPS4 + orchestrator egress (anadido 2026-05-24)"
+  ip:
+    - "203.0.113.11"
+    - "198.51.100.87"
+    - "192.0.2.97"
+    - "198.51.100.201"

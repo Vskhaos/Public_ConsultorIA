@@ -1,0 +1,79 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [main]
+
+env:
+  STACK_NAME: consultor
+  VPS1_HOST: 203.0.113.11
+  VPS1_USER: auditor
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Build imágenes Docker
+        run: |
+          docker build --pull -t audit-api:latest      ./API
+          docker build --pull -t audit-frontend:latest ./Frontend
+          docker build --pull -t audit-admin:latest    ./Admin
+
+      - name: Asegurar known_hosts del VPS1
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -t ed25519,rsa -H "${VPS1_HOST}" >> ~/.ssh/known_hosts 2>/dev/null
+          sort -u -o ~/.ssh/known_hosts ~/.ssh/known_hosts
+
+      - name: Transferir imágenes a VPS1
+        run: |
+          for IMG in audit-api audit-frontend audit-admin; do
+            echo "── transfiriendo $IMG:latest ──"
+            docker save "$IMG:latest" | ssh "${VPS1_USER}@${VPS1_HOST}" 'docker load'
+          done
+
+      - name: Sincronizar stack y overrides al VPS1
+        run: |
+          ssh "${VPS1_USER}@${VPS1_HOST}" \
+              'mkdir -p ~/stack/frontend-overrides ~/stack/admin-overrides'
+          rsync -az \
+              -e ssh \
+              docker-stack.yml init.sql \
+              "${VPS1_USER}@${VPS1_HOST}:~/stack/"
+          rsync -az --delete \
+              -e ssh \
+              frontend-overrides/ \
+              "${VPS1_USER}@${VPS1_HOST}:~/stack/frontend-overrides/"
+          rsync -az --delete \
+              -e ssh \
+              admin-overrides/ \
+              "${VPS1_USER}@${VPS1_HOST}:~/stack/admin-overrides/"
+
+      - name: Deploy del stack
+        run: |
+          ssh "${VPS1_USER}@${VPS1_HOST}" \
+              "docker stack deploy --with-registry-auth --prune \
+                 -c ~/stack/docker-stack.yml ${STACK_NAME}"
+
+      - name: Forzar actualización de servicios con la imagen nueva
+        run: |
+          for SVC in api frontend admin; do
+            echo "── force-update consultor_${SVC} ──"
+            ssh "${VPS1_USER}@${VPS1_HOST}" \
+                "docker service update --force \
+                   --image audit-${SVC}:latest \
+                   --detach=false ${STACK_NAME}_${SVC}"
+          done
+
+      - name: Estado final
+        run: |
+          ssh "${VPS1_USER}@${VPS1_HOST}" \
+              "docker stack services ${STACK_NAME}"
+          echo ""
+          echo "── Producción:  https://laconsultoria.cat ──"
+          echo "── Admin panel: https://app.laconsultoria.cat ──"
+          echo "── API:         https://api.laconsultoria.cat ──"

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ConsultorIA — Hitos & métricas</title>
+<meta name="description" content="Métricas anonimizadas de la plataforma de auditoría de seguridad asistida por IA.">
+<link rel="icon" type="image/svg+xml" href="Diseño_sin_título.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/hitos.css">
+</head>
+<body>
+<div class="hero-glow"></div>
+<div class="wrapper">
+
+  <nav class="top">
+    <a class="brand" href="/">CONSULTOR<strong>IA</strong></a>
+    <div class="ctas">
+      <a href="/">Inicio</a>
+      <a class="cta" href="https://app.laconsultoria.cat">Acceder</a>
+    </div>
+  </nav>
+
+  <header class="page-head">
+    <h1>Hitos &amp; <em>métricas</em></h1>
+    <p>Datos anonimizados de la plataforma. Auditorías reales que han pasado por el orquestador de IA, agregadas con <strong>k-anonymity ≥ 3</strong> para evitar reidentificación de cliente o empresa.</p>
+  </header>
+
+  <section class="kpi-grid" id="kpiGrid">
+    <div class="kpi">
+      <div class="kpi-label">Auditorías completadas</div>
+      <div class="kpi-value" id="kpiCompletadas">—</div>
+      <div class="kpi-sub">Informe técnico + ejecutivo entregados</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">En curso</div>
+      <div class="kpi-value" id="kpiEnCurso">—</div>
+      <div class="kpi-sub">Engagements activos en el orquestador</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Empresas únicas</div>
+      <div class="kpi-value" id="kpiEmpresas">—</div>
+      <div class="kpi-sub">Organizaciones distintas auditadas</div>
+    </div>
+    <div class="kpi">
+      <div class="kpi-label">Tasa éxito</div>
+      <div class="kpi-value" id="kpiTasaExito">—</div>
+      <div class="kpi-sub">Completadas / (completadas + fallidas)</div>
+    </div>
+  </section>
+
+  <section class="charts-row">
+    <div class="chart-card">
+      <h3>📊 Distribución por tipo</h3>
+      <div class="chart-wrap"><canvas id="chartTipo"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3>🏢 Por sector</h3>
+      <div class="chart-wrap"><canvas id="chartSector"></canvas></div>
+    </div>
+  </section>
+
+  <section class="chart-card" style="margin-bottom: 22px">
+    <h3>📈 Auditorías por mes (últimos 12)</h3>
+    <div class="chart-wrap tall"><canvas id="chartMes"></canvas></div>
+  </section>
+
+  <div class="legal-note" id="legalNote">
+    <strong>Sobre estos datos.</strong> Las cifras provienen de auditorías reales
+    ejecutadas por la plataforma. Los registros se agregan en tiempo real
+    y se aplica un umbral mínimo de <strong>k=3</strong>: cualquier categoría
+    (tipo de auditoría, sector) con menos de 3 auditorías se agrupa
+    automáticamente bajo <em>«Otros»</em>. Esto cumple con el principio de
+    minimización del RGPD: no es posible deducir la identidad de ningún cliente
+    individual a partir de estas estadísticas.
+  </div>
+
+  <footer>
+    Plataforma de auditoría asistida por IA · Self-hosted ·
+    Datos en tiempo real (caché 60 s) · <a href="/">laconsultoria.cat</a>
+  </footer>
+</div>
+
+<script src="/chart.umd.min.js"></script>
+<script src="/hitos.js"></script>
+</body>
+</html>

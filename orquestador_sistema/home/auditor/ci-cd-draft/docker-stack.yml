@@ -1,0 +1,268 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Docker Swarm Stack — Plataforma Auditoría IA
+#  Cluster: consultor-backend (manager) + consultor-data (worker)
+#  Despliegue: 2026-05-04 — migración desde isard.
+# ─────────────────────────────────────────────────────────────────────────────
+
+configs:
+  db_init_v2:
+    file: ./init.sql
+
+networks:
+  public:
+    driver: overlay
+    driver_opts:
+      encrypted: "true"
+  internal:
+    driver: overlay
+    internal: true
+    driver_opts:
+      encrypted: "true"
+
+volumes:
+  postgres_data:
+    driver: local
+  minio_data:
+    driver: local
+  traefik_acme:
+    driver: local
+
+services:
+
+  # ── Traefik — Reverse proxy + TLS automático con Let's Encrypt ─────────────
+  traefik:
+    image: traefik:v2.11
+    command:
+      - --providers.docker=true
+      - --providers.docker.swarmMode=true
+      - --providers.docker.exposedByDefault=false
+      - --providers.docker.network=consultor_public
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.le.acme.email=auditor@laconsultoria.cat
+      - --certificatesresolvers.le.acme.storage=/acme/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge=true
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+      - --log.level=INFO
+      - --api=true
+      - --api.dashboard=true
+    ports:
+      - target: 80
+        published: 80
+        mode: host
+      - target: 443
+        published: 443
+        mode: host
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_acme:/acme
+    networks:
+      - public
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.hostname == consultor-backend
+      restart_policy:
+        condition: any
+        delay: 5s
+      labels:
+        # Middleware basicauth — definido aquí, referenciado desde cada router como auth@docker
+        - "traefik.enable=true"
+        - "traefik.http.middlewares.auth.basicauth.users=auditor:<REDACTED>"
+        - "traefik.http.middlewares.auth.basicauth.realm=Plataforma Auditoría — acceso restringido"
+        # Servicio dummy obligatorio cuando hay labels en traefik (Swarm exige al menos un servicio asociado al router)
+        - "traefik.http.services.dummy-traefik.loadbalancer.server.port=8080"
+
+  # ── Frontend — nginx static (laconsultoria.cat / www) ──────────────────────
+  frontend:
+    image: audit-frontend:latest
+    # Overrides bind-mounted: modal "estamos trabajando" durante pre-lanzamiento.
+    # Para retirar el bloqueo: comentar/quitar este bloque volumes y redeploy.
+    volumes:
+      # patch.js: añade modal "estamos trabajando" + bypass admin (?<param-interno>)
+      - /home/auditor/stack/frontend-overrides/formulario.patch.js:/usr/share/nginx/html/formulario.patch.js:ro
+      # nginx config con cache corta para que cambios propaguen rápido durante pre-lanzamiento
+      - /home/auditor/stack/frontend-overrides/app.conf:/etc/nginx/conf.d/app.conf:ro
+    networks:
+      - public
+    deploy:
+      replicas: 3
+      placement:
+        constraints:
+          - node.hostname == consultor-backend
+      restart_policy:
+        condition: any
+        delay: 5s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.frontend.rule=Host(`laconsultoria.cat`) || Host(`www.laconsultoria.cat`)"
+        - "traefik.http.routers.frontend.entrypoints=websecure"
+        - "traefik.http.routers.frontend.tls.certresolver=le"
+        - "traefik.http.routers.frontend.priority=1"
+        # NOTA: basicauth retirado del frontend en 2026-05-04 16:55 — el bloqueo del
+        # envío del form ahora vive en el modal cliente (index.html). El api sigue
+        # con basicauth como defensa en profundidad por si alguien intenta POST directo.
+        - "traefik.http.services.frontend.loadbalancer.server.port=80"
+
+  # ── API — FastAPI (api.laconsultoria.cat) ──────────────────────────────────
+  api:
+    image: audit-api:latest
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: auditoria_db
+      DB_USER: api_user
+      DB_PASSWORD: <REDACTED>
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: <REDACTED>
+      MINIO_BUCKET: audit-files
+      MINIO_SECURE: "false"
+      ALLOWED_ORIGINS: "https://laconsultoria.cat,https://www.laconsultoria.cat,https://app.laconsultoria.cat"
+      ADMIN_USERNAME: auditor
+      ADMIN_PASSWORD_HASH: "<REDACTED>"
+      JWT_SECRET: "<REDACTED>"
+    networks:
+      - public
+      - internal
+    deploy:
+      replicas: 4
+      placement:
+        constraints:
+          - node.hostname == consultor-backend
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 10
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      labels:
+        - "traefik.enable=true"
+        # Router público api.laconsultoria.cat — protegido con basicauth (auditor) por defensa.
+        - "traefik.http.routers.api.rule=Host(`api.laconsultoria.cat`)"
+        - "traefik.http.routers.api.entrypoints=websecure"
+        - "traefik.http.routers.api.tls.certresolver=le"
+        - "traefik.http.routers.api.middlewares=auth@docker"
+        - "traefik.http.services.api.loadbalancer.server.port=8000"
+        - "traefik.docker.network=consultor_public"
+        # Router interno: el panel admin en app.laconsultoria.cat hace fetch a /api/* relativo.
+        # Sin basicauth porque la propia app maneja JWT (login graphic + ADMIN_PASSWORD_HASH).
+        - "traefik.http.routers.admin-api.rule=Host(`app.laconsultoria.cat`) && PathPrefix(`/api`)"
+        - "traefik.http.routers.admin-api.entrypoints=websecure"
+        - "traefik.http.routers.admin-api.tls.certresolver=le"
+        - "traefik.http.routers.admin-api.priority=100"
+        - "traefik.http.routers.admin-api.service=api"
+        # Router público: laconsultoria.cat/api/* → api. Necesario para que el form
+        # (con bypass admin) pueda hacer POST a /api/audit-request. Sin basicauth: el
+        # bypass del modal en patch.js es la barrera (visitantes ven modal, no llaman al api).
+        - "traefik.http.routers.public-api.rule=Host(`laconsultoria.cat`) && PathPrefix(`/api`)"
+        - "traefik.http.routers.public-api.entrypoints=websecure"
+        - "traefik.http.routers.public-api.tls.certresolver=le"
+        - "traefik.http.routers.public-api.priority=100"
+        - "traefik.http.routers.public-api.service=api"
+
+  # ── Admin — Calendario administradores (app.laconsultoria.cat) ─────────────
+  admin:
+    image: audit-admin:latest
+    # Override con ojito para mostrar/ocultar password en el login graphic.
+    volumes:
+      - /home/auditor/stack/admin-overrides/index.html:/usr/share/nginx/html/index.html:ro
+    networks:
+      - public
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.hostname == consultor-backend
+      restart_policy:
+        condition: any
+        delay: 5s
+      labels:
+        - "traefik.enable=true"
+        # Sin basicauth de Traefik — el panel admin tiene su propio login graphic con JWT.
+        - "traefik.http.routers.admin.rule=Host(`app.laconsultoria.cat`)"
+        - "traefik.http.routers.admin.entrypoints=websecure"
+        - "traefik.http.routers.admin.tls.certresolver=le"
+        - "traefik.http.services.admin.loadbalancer.server.port=80"
+
+  # ── PostgreSQL — VPS2 (consultor-data), sin exposición pública ─────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: auditoria_db
+      POSTGRES_USER: api_user
+      POSTGRES_PASSWORD: <REDACTED>
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    configs:
+      - source: db_init_v2
+        target: /docker-entrypoint-initdb.d/init.sql
+    networks:
+      - internal
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.hostname == consultor-data
+      restart_policy:
+        condition: any
+        delay: 5s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U api_user -d auditoria_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── MinIO — VPS2 (consultor-data), solo red interna ─────────────────────────
+  minio:
+    image: minio/minio:latest
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: <REDACTED>
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    networks:
+      - internal
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.hostname == consultor-data
+      restart_policy:
+        condition: any
+        delay: 5s
+
+  # ── MinIO init — crea bucket audit-files si no existe ──────────────────────
+  minio_init:
+    image: minio/mc:latest
+    networks:
+      - internal
+    entrypoint: >
+      sh -c "
+      until mc alias set local http://minio:9000 minioadmin <REDACTED>; do sleep 2; done;
+      mc mb -p local/audit-files || true;
+      echo 'bucket audit-files OK';
+      tail -f /dev/null
+      "
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.hostname == consultor-data
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5

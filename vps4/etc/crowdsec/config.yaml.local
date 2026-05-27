@@ -1,0 +1,5 @@
+# CrowdSec VPS4: solo AGENT. LAPI vive en VPS3 vía monitoring-tunnel SSH.
+api:
+  server:
+    enable: false
+    online_client: null

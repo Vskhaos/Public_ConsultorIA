@@ -1,0 +1,21 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-multipart==0.0.12     # necesario para Form + File en FastAPI
+asyncpg==0.30.0              # driver PostgreSQL async
+minio==7.2.10                # cliente MinIO / S3-compatible
+python-dotenv==1.0.1
+pydantic==2.10.3
+pydantic[email]==2.10.3
+pydantic-settings==2.6.1
+PyJWT==2.10.1                # JWT para autenticación del panel admin
+passlib[bcrypt]==1.7.4       # hash bcrypt de contraseñas
+slowapi==0.1.9               # rate limiting
+redis==5.2.1                 # backend storage para slowapi (cross-replica)
+endesive==2.18.1             # firma + verificación PAdES (PDF) y CAdES
+reportlab==4.2.5             # generación de PDF del descargo
+cryptography==43.0.3         # parseo X.509, requerido por endesive
+asn1crypto==1.5.1            # ASN.1 backend que usa endesive
+httpx==0.28.1                # cliente HTTP async (BTCPay REST)
+weasyprint==63.0             # HTML+CSS → PDF para informe profesional
+markdown==3.7                # parse markdown a HTML antes de renderizar PDF
+Jinja2==3.1.4                # plantilla HTML del informe

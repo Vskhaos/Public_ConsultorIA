@@ -1,0 +1,19 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Monitoring stack — Uptime Kuma (en VPS4)
+# ─────────────────────────────────────────────────────────────────────────────
+# Bind 127.0.0.1:3001 → accesible solo via SSH tunnel:
+#   ssh -L 3001:localhost:3001 vps4
+#   abrir http://localhost:3001 en navegador local
+# Acceso primer-arranque: cualquier IP puede crear la primera cuenta admin
+# DESDE EL TÚNEL (no público).
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - /var/lib/monitoring/uptime-kuma:/app/data

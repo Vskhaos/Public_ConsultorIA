@@ -1,0 +1,15 @@
+# /etc/systemd/system/wazuh-tunnel.service
+[Unit]
+Description=SSH tunnel: localhost:1514+1515+10051+9100+8080 → vps3 (wazuh + zabbix + minio + crowdsec-lapi)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=auditor
+ExecStart=/usr/bin/ssh -N -o ServerAliveInterval=10 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=accept-new -L 127.0.0.1:1514:127.0.0.1:1514 -L 127.0.0.1:1515:127.0.0.1:1515 -L 127.0.0.1:10051:127.0.0.1:10051 -L 127.0.0.1:9100:127.0.0.1:9000 -L 127.0.0.1:8080:127.0.0.1:8080 -i /home/auditor/.ssh/id_ed25519 -p 50022 auditor@198.51.100.87
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

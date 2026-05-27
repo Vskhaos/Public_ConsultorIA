@@ -1,0 +1,58 @@
+version: '3.8'
+
+# Qwen3-14B (AWQ Q4) — reemplaza a deepseek + whiterabbit.
+# Dense 14B → 9.3 GB en GPU, sobra contexto largo. Entra holgado en 16 GB
+# (la variante 30B-A3B-Thinking pesaba 15.7 GB y dejaba 0.3 GB → OOM).
+# Thinking mode habilitado vía chat template (enable_thinking=True).
+
+services:
+  qwen3:
+    # Pin al SHA local funcional (la imagen :latest cambia en Docker Hub y
+    # cualquier `stack deploy` resolvía el nuevo digest, intentaba pull y
+    # fallaba por disco lleno → 0/1 réplicas durante días. Cuando subas a
+    # versión nueva: pull manual, comprobar arranca, y actualizar este SHA).
+    image: vllm/vllm-openai:latest@sha256:70a098d90dbab428a001d9e852fc0fc8d67da5beb03e7851a22247653bf35923
+    ports:
+      # mode: host bypassa el ingress swarm (que está roto en este nodo).
+      # localhost:8003 → puerto 8000 del container directamente.
+      - target: 8000
+        published: 8003
+        protocol: tcp
+        mode: host
+    volumes:
+      # bind mount a /home (650 GB libres, evita llenar /var)
+      - /home/auditor/ai_pentest/qwen3/hf_cache:/root/.cache/huggingface
+    command: >
+      --model Qwen/Qwen3-14B-AWQ
+      --quantization awq_marlin
+      --max-model-len 16384
+      --gpu-memory-utilization 0.92
+      --enable-prefix-caching
+      --enable-auto-tool-choice
+      --tool-call-parser hermes
+      --reasoning-parser qwen3
+      --served-model-name qwen3
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      - HF_HUB_ENABLE_HF_TRANSFER=1
+    secrets:
+      - source: model_hub_token
+        target: /root/.cache/huggingface/token
+        mode: 0400
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 30s
+        max_attempts: 3
+    networks:
+      - ai_pentest_net
+
+networks:
+  ai_pentest_net:
+    external: true
+
+secrets:
+  model_hub_token:
+    external: true

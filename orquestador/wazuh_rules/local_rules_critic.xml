@@ -1,0 +1,64 @@
+<!--
+  Reglas Wazuh para alertar sobre verdicts del Critic del orchestrator.
+
+  Despliegue (en wazuh-manager, VPS1):
+    1. Copiar el contenido <group>...</group> al final de
+       /var/ossec/etc/rules/local_rules.xml DENTRO del wazuh-manager container.
+    2. Reiniciar: docker exec <wazuh-manager> /var/ossec/bin/wazuh-control restart
+    3. Verificar: docker exec <wazuh-manager> /var/ossec/bin/wazuh-logtest
+       y pegar una línea del orchestrator que contenga CRITIC_AUDIT con
+       verdict=VETO; debe disparar rule id 100501.
+
+  El log llega a Wazuh así:
+    orchestrator.service (systemd) → journald
+      → wazuh-agent journald_log → wazuh-manager (analysisd)
+    La línea cruda viene como p.ej.:
+      May 11 20:13:36 consultoria python[452920]: 2026-05-11 ...
+      WARNING orchestrator.critic.audit CRITIC_AUDIT {"src":"orchestrator.critic",...}
+
+  Las reglas usan PCRE2 para extraer el JSON y el verdict.
+-->
+
+<group name="orchestrator,critic,local,">
+
+  <!-- Sibling base: cualquier evento CRITIC_AUDIT del orchestrator -->
+  <rule id="100500" level="5">
+    <match>CRITIC_AUDIT</match>
+    <description>Critic event captured.</description>
+    <group>orchestrator_critic,</group>
+  </rule>
+
+  <!-- VETO: alta severidad. Indica intento de comando peligroso. -->
+  <rule id="100501" level="10">
+    <if_sid>100500</if_sid>
+    <match>"verdict":"VETO"</match>
+    <description>Critic VETÓ una Action del Red</description>
+    <group>orchestrator_critic,attack_attempt,</group>
+  </rule>
+
+  <!-- ADVISE: severidad media. El Red lanzó algo subóptimo pero válido. -->
+  <rule id="100502" level="7">
+    <if_sid>100500</if_sid>
+    <match>"verdict":"ADVISE"</match>
+    <description>Critic recomendó cambio sobre Action</description>
+    <group>orchestrator_critic,</group>
+  </rule>
+
+  <!-- Critic fail-open: error en la propia llamada al Critic. -->
+  <rule id="100503" level="7">
+    <if_sid>100500</if_sid>
+    <match>"verdict":"ERROR"</match>
+    <description>Critic fail-open — error en la llamada</description>
+    <group>orchestrator_critic,configuration_error,</group>
+  </rule>
+
+  <!-- Correlación: si en 5 minutos hay >3 VETO sobre el mismo engagement,
+       el modelo está atascado o algo raro pasa. -->
+  <rule id="100504" level="12" frequency="3" timeframe="300">
+    <if_matched_sid>100501</if_matched_sid>
+    <same_field>engagement_id</same_field>
+    <description>Múltiples VETO sobre el mismo engagement — posible modelo atascado o intento sostenido fuera de scope</description>
+    <group>orchestrator_critic,attack_attempt,multiple_drops,</group>
+  </rule>
+
+</group>

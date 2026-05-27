@@ -1,0 +1,25 @@
+# Entornos virtuales
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Variables de entorno
+.env
+*.env
+
+# Binarios y paquetes
+*.deb
+*.exe
+*.dmg
+
+# Imágenes locales
+*.png
+*.jpg
+*.jpeg
+*.ico
+
+# Archivos temporales
+*.tmp
+*.log

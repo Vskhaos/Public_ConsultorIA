@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ConsultorIA — Plataforma</title>
+
+<!-- FullCalendar v6 (CSS lo inyecta el propio JS en v6+; no hay <link> CSS) -->
+<!-- SRI: si el CDN se compromete, el navegador rechaza el script con hash distinto. -->
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"
+        integrity="sha384-5JIwZN3kuxX2zKsavvNmbZ3zhZZMUtu/eQiK3BbXukpSXp0Cd2ZP4OAYKx7mrPgI"
+        crossorigin="anonymous"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+
+<!-- Cloudflare Turnstile: SIN SRI a propósito — Cloudflare rota el JS frecuentemente. -->
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+
+<link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+
+<!-- ─────────────── Login / Signup overlay ─────────────── -->
+<div id="loginOverlay" class="login-overlay">
+  <div class="login-box">
+    <div class="login-logo">
+      <h1>ConsultorIA</h1>
+      <p>Plataforma de Auditoría con IA</p>
+    </div>
+
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-pane="paneLogin">Iniciar sesión</button>
+      <button class="auth-tab" data-pane="paneSignup">Registrarse</button>
+    </div>
+
+    <!-- ── Login ── -->
+    <div id="paneLogin" class="auth-pane active">
+      <form id="loginForm" autocomplete="on" novalidate>
+        <div class="login-field">
+          <label for="loginUser">Email o usuario</label>
+          <input type="text" id="loginUser" autocomplete="username" spellcheck="false" required>
+        </div>
+        <div class="login-field">
+          <label for="loginPass">Contraseña</label>
+          <div class="pwd-wrap">
+            <input type="password" id="loginPass" autocomplete="current-password" required>
+            <button type="button" class="pwd-toggle" aria-label="Mostrar contraseña" data-pwd-target="loginPass">👁</button>
+          </div>
+        </div>
+        <div class="login-error" id="loginError"></div>
+        <div class="cf-turnstile" id="tsLoginWidget"
+             data-sitekey="0x4AAAAAADNSwpYO82iWADL9"
+             data-callback="onTSLogin"
+             data-error-callback="onTSLoginErr"
+             data-expired-callback="onTSLoginErr"
+             style="margin:12px 0;display:flex;justify-content:center"></div>
+        <button type="submit" class="login-btn" id="loginBtn">Acceder →</button>
+      </form>
+    </div>
+
+    <!-- ── Signup ── -->
+    <div id="paneSignup" class="auth-pane">
+      <form id="signupForm" autocomplete="off" novalidate>
+        <div class="login-field">
+          <label for="signupEmail">Email</label>
+          <input type="email" id="signupEmail" autocomplete="email" required>
+        </div>
+        <div class="login-field">
+          <label for="signupName">Nombre y apellidos</label>
+          <input type="text" id="signupName" autocomplete="name">
+        </div>
+        <div class="login-field">
+          <label for="signupPass">Contraseña (mín. 8 caracteres)</label>
+          <div class="pwd-wrap">
+            <input type="password" id="signupPass" minlength="8" required>
+            <button type="button" class="pwd-toggle" aria-label="Mostrar contraseña" data-pwd-target="signupPass">👁</button>
+          </div>
+        </div>
+        <div class="login-field">
+          <label for="signupPass2">Repite la contraseña</label>
+          <div class="pwd-wrap">
+            <input type="password" id="signupPass2" minlength="8" required>
+            <button type="button" class="pwd-toggle" aria-label="Mostrar contraseña" data-pwd-target="signupPass2">👁</button>
+          </div>
+        </div>
+
+        <div class="login-field">
+          <label>Tus empresas / clientes que vas a auditar</label>
+          <div id="empresasList" class="empresas-list"></div>
+          <button type="button" class="add-row-btn" id="addEmpresaBtn">+ Añadir empresa</button>
+        </div>
+
+        <div class="login-error" id="signupError"></div>
+        <div class="login-info" id="signupInfo"></div>
+        <div class="cf-turnstile" id="tsSignupWidget"
+             data-sitekey="0x4AAAAAADNSwpYO82iWADL9"
+             data-callback="onTSSignup"
+             data-error-callback="onTSSignupErr"
+             data-expired-callback="onTSSignupErr"
+             style="margin:12px 0;display:flex;justify-content:center"></div>
+        <button type="submit" class="login-btn" id="signupBtn">Crear cuenta →</button>
+
+        <p style="font-size:10px;color:var(--text-dim);margin-top:14px;line-height:1.5;text-align:center;">
+          Al registrarte aceptas el descargo de responsabilidad.<br>
+          La firma digital del descargo se solicitará antes de tu primera auditoría.
+        </p>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────── Header común ─────────────── -->
+<header id="appHeader" style="display:none">
+  <h1 id="headerTitle">CALENDARIO DE AUDITORÍAS</h1>
+  <span class="badge-rol" id="headerRolBadge">Admin</span>
+  <div class="header-user">
+    <button class="login-btn" style="width:auto;padding:8px 16px;font-size:11px"
+            id="newAuditBtnHeader">+ Nueva petición</button>
+    <span class="header-email" id="headerEmail">—</span>
+    <button class="logout-btn" id="logoutBtn">Cerrar sesión</button>
+  </div>
+</header>
+
+<!-- ─────────────── Vista admin (calendar) ─────────────── -->
+<div id="viewAdmin" class="view">
+  <div class="layout">
+    <div id="calendar"></div>
+    <div class="sidebar">
+      <div class="legend">
+        <h3>Prioridad</h3>
+        <div class="legend-item"><div class="legend-dot" style="background:#e74c3c"></div> Alta</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f39c12"></div> Media</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#0066cc"></div> Normal</div>
+      </div>
+
+      <div class="detail" id="eventDetail">
+        <h3 id="detailTitle">—</h3>
+        <div class="detail-row"><span class="detail-label">Fechas</span><span class="detail-value" id="detailDates">—</span></div>
+        <div class="detail-row"><span class="detail-label">Sector</span><span class="detail-value" id="detailSector">—</span></div>
+        <div class="detail-row"><span class="detail-label">Contacto</span><span class="detail-value" id="detailEmail">—</span></div>
+        <div class="detail-row"><span class="detail-label">Acceso</span><span class="detail-value" id="detailTunnel">—</span></div>
+        <div class="detail-row"><span class="detail-label">Horario</span><span class="detail-value" id="detailSchedule">—</span></div>
+        <div class="detail-row"><span class="detail-label">Estado</span><span class="detail-value" id="detailEstado">—</span></div>
+        <div class="detail-row"><span class="detail-label">Prioridad</span><span class="detail-value" id="detailPriority">—</span></div>
+        <div id="detailDownloads" hidden style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn-firmar btn-informe" id="detailDownloadEjecutivo" data-tipo="ejecutivo">📊 Resumen ejecutivo</button>
+          <button class="btn-firmar btn-informe" id="detailDownloadTecnico" data-tipo="tecnico">📄 Informe técnico</button>
+        </div>
+      </div>
+
+      <div class="upcoming">
+        <h3>Próximas auditorías</h3>
+        <div id="upcomingList"><span class="empty">—</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────── Vista cliente (mis peticiones) ─────────────── -->
+<div id="viewClient" class="view">
+  <div class="client-layout">
+    <div class="client-header">
+      <h2>Mis peticiones de auditoría</h2>
+    </div>
+    <div id="auditsList"><div class="empty">Cargando…</div></div>
+  </div>
+</div>
+
+<!-- ─────────────── Modal nueva petición ─────────────── -->
+<div id="newAuditModal" class="modal-overlay">
+  <div class="modal-box">
+    <h3>Nueva petición de auditoría</h3>
+    <form id="newAuditForm" autocomplete="off" novalidate>
+      <div class="modal-row">
+        <span class="field-label">Empresa a auditar</span>
+        <select class="form-control" id="naEmpresa" required></select>
+      </div>
+
+      <div class="modal-row">
+        <span class="field-label">Tipo de auditoría (elige 1)</span>
+        <style>.scope-card input[type="radio"]{position:absolute;opacity:0;pointer-events:none;}</style>
+        <div class="scope-grid" id="naScope">
+          <label class="scope-card"><input type="radio" name="natipo" value="pentest_ext">
+            <div class="scope-card-inner">
+              <div class="scope-card-num">01</div>
+              <div class="scope-card-title">Pentesting externo</div>
+              <div class="scope-card-desc">Reconocimiento y enumeración desde Internet</div>
+            </div>
+          </label>
+          <label class="scope-card"><input type="radio" name="natipo" value="pentest_int">
+            <div class="scope-card-inner">
+              <div class="scope-card-num">02</div>
+              <div class="scope-card-title">Pentesting interno</div>
+              <div class="scope-card-desc">Movimiento lateral en red corporativa (requiere túnel)</div>
+            </div>
+          </label>
+          <label class="scope-card"><input type="radio" name="natipo" value="web_app">
+            <div class="scope-card-inner">
+              <div class="scope-card-num">03</div>
+              <div class="scope-card-title">Aplicación web</div>
+              <div class="scope-card-desc">OWASP Top 10, autenticación, lógica de negocio</div>
+            </div>
+          </label>
+          <label class="scope-card"><input type="radio" name="natipo" value="cloud">
+            <div class="scope-card-inner">
+              <div class="scope-card-num">04</div>
+              <div class="scope-card-title">Cloud</div>
+              <div class="scope-card-desc">AWS / Azure / GCP — IAM, buckets, redes</div>
+            </div>
+          </label>
+          <label class="scope-card"><input type="radio" name="natipo" value="compliance">
+            <div class="scope-card-inner">
+              <div class="scope-card-num">05</div>
+              <div class="scope-card-title">Compliance</div>
+              <div class="scope-card-desc">ISO 27001, ENS, NIS2 — gap analysis</div>
+            </div>
+          </label>
+          <label class="scope-card"><input type="radio" name="natipo" value="gdpr">
+            <div class="scope-card-inner">
+              <div class="scope-card-num">06</div>
+              <div class="scope-card-title">GDPR / RGPD</div>
+              <div class="scope-card-desc">Tratamiento de datos personales, DPIA</div>
+            </div>
+          </label>
+          <label class="scope-card"><input type="radio" name="natipo" value="phishing">
+            <div class="scope-card-inner">
+              <div class="scope-card-num">07</div>
+              <div class="scope-card-title">Phishing</div>
+              <div class="scope-card-desc">Campañas de ingeniería social controladas</div>
+            </div>
+          </label>
+          <label class="scope-card"><input type="radio" name="natipo" value="wifi">
+            <div class="scope-card-inner">
+              <div class="scope-card-num">08</div>
+              <div class="scope-card-title">Wi-Fi</div>
+              <div class="scope-card-desc">Auditoría de redes inalámbricas in situ</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div class="modal-row" id="naTunnelPanel" style="display:none">
+        <span class="field-label">Método de acceso interno</span>
+
+        <div class="tunnel-cards">
+          <label class="tunnel-card">
+            <input type="radio" name="naTunnel" value="wireguard" checked>
+            <div class="tunnel-card-inner">
+              <div class="tunnel-card-icon">▣</div>
+              <div class="tunnel-card-title">WireGuard</div>
+              <div class="tunnel-card-desc">Sube el archivo <code>.conf</code> con tu peer</div>
+            </div>
+          </label>
+          <label class="tunnel-card">
+            <input type="radio" name="naTunnel" value="ssh">
+            <div class="tunnel-card-inner">
+              <div class="tunnel-card-icon">⫸</div>
+              <div class="tunnel-card-title">SSH</div>
+              <div class="tunnel-card-desc">Sube tu clave privada <code>.pem</code> / <code>.key</code></div>
+            </div>
+          </label>
+        </div>
+
+        <div id="naWgWrap" class="file-block">
+          <span class="field-label">Archivo de configuración WireGuard</span>
+          <label class="file-drop" id="naWgDrop">
+            <input type="file" id="naWgFile" accept=".conf,.txt">
+            <div class="fd-idle">
+              <div class="file-drop-icon">↑</div>
+              <div class="file-drop-text">Arrastra o pulsa para seleccionar el .conf</div>
+              <div class="file-drop-hint">El SHA-256 se verificará automáticamente al subir</div>
+            </div>
+            <div class="fd-uploading">
+              <div class="fd-uploading-name"></div>
+              <div class="fd-progress-bar"><div class="fd-progress-fill"></div></div>
+              <div class="fd-progress-pct">0%</div>
+              <div class="fd-progress-status">Subiendo y calculando hash…</div>
+            </div>
+            <div class="fd-verified">
+              <div class="fd-verified-icon">✓</div>
+              <div class="fd-verified-name"></div>
+              <div class="fd-verified-hashes">
+                <div class="fd-hash-row"><span class="fd-hash-label">Local</span><span class="fd-hash-val fd-hash-local"></span></div>
+                <div class="fd-hash-row"><span class="fd-hash-label">Servidor</span><span class="fd-hash-val fd-hash-server"></span></div>
+              </div>
+              <div class="fd-hash-status"></div>
+              <button type="button" class="fd-replace-btn">Cambiar archivo</button>
+            </div>
+          </label>
+        </div>
+
+        <div id="naSshWrap" class="file-block" style="display:none">
+          <span class="field-label">Clave privada SSH</span>
+          <label class="file-drop" id="naSshDrop">
+            <input type="file" id="naSshFile" accept=".pem,.key,.txt">
+            <div class="fd-idle">
+              <div class="file-drop-icon">↑</div>
+              <div class="file-drop-text">Arrastra o pulsa para seleccionar tu clave</div>
+              <div class="file-drop-hint">El SHA-256 se verificará automáticamente al subir</div>
+            </div>
+            <div class="fd-uploading">
+              <div class="fd-uploading-name"></div>
+              <div class="fd-progress-bar"><div class="fd-progress-fill"></div></div>
+              <div class="fd-progress-pct">0%</div>
+              <div class="fd-progress-status">Subiendo y calculando hash…</div>
+            </div>
+            <div class="fd-verified">
+              <div class="fd-verified-icon">✓</div>
+              <div class="fd-verified-name"></div>
+              <div class="fd-verified-hashes">
+                <div class="fd-hash-row"><span class="fd-hash-label">Local</span><span class="fd-hash-val fd-hash-local"></span></div>
+                <div class="fd-hash-row"><span class="fd-hash-label">Servidor</span><span class="fd-hash-val fd-hash-server"></span></div>
+              </div>
+              <div class="fd-hash-status"></div>
+              <button type="button" class="fd-replace-btn">Cambiar archivo</button>
+            </div>
+          </label>
+          <p style="font-size:10px;color:var(--text-dim);margin-top:8px;line-height:1.5">
+            Solo necesitamos la clave privada — el host se infiere de las IPs
+            del alcance. Si el usuario SSH o el puerto son distintos del
+            estándar, especifícalo en "Notas adicionales".
+          </p>
+        </div>
+
+        <p style="font-size:10px;color:var(--text-dim);margin-top:10px;line-height:1.5">
+          ⓘ Solicitado solo para auditorías que requieren acceso interno
+          (pentesting interno, compliance, GDPR/ENS). Transmisión cifrada
+          (TLS) y almacenamiento cifrado en MinIO.
+        </p>
+      </div>
+
+      <div class="modal-row">
+        <span class="field-label">Dominios autorizados (uno por línea)</span>
+        <textarea class="form-control" id="naDomains" rows="3"
+                  placeholder="ejemplo.com&#10;sub.ejemplo.com"></textarea>
+      </div>
+
+      <div class="modal-row">
+        <span class="field-label">IPs públicas autorizadas (una por línea, opcional)</span>
+        <textarea class="form-control" id="naIps" rows="3"
+                  placeholder="93.184.216.34&#10;93.184.216.35"></textarea>
+      </div>
+
+      <div class="modal-row split-2">
+        <div>
+          <span class="field-label">Fecha inicio</span>
+          <input type="date" class="form-control" id="naDate" required>
+        </div>
+        <div>
+          <span class="field-label">Duración</span>
+          <select class="form-control" id="naDuration">
+            <option value="45m">45 minutos</option>
+            <option value="1h" selected>1 hora</option>
+            <option value="90m">1 hora 30 minutos</option>
+            <option value="2h">2 horas</option>
+          </select>
+          <input type="number" id="naDurationCustom" class="form-control"
+                 min="1" max="200" step="1" placeholder="Horas (ej. 12)"
+                 hidden style="margin-top:6px">
+        </div>
+      </div>
+
+      <div class="modal-row split-2">
+        <div>
+          <span class="field-label">Horario preferido</span>
+          <input type="text" class="form-control" id="naSchedule" placeholder="09:00-18:00">
+        </div>
+        <div>
+          <span class="field-label">Prioridad</span>
+          <select class="form-control" id="naPriority">
+            <option value="low">Normal</option>
+            <option value="medium">Media</option>
+            <option value="high">Alta</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="modal-row split-2">
+        <div>
+          <span class="field-label">Tu nombre (representante)</span>
+          <input type="text" class="form-control" id="naContactName" required>
+        </div>
+        <div>
+          <span class="field-label">Cargo / rol</span>
+          <input type="text" class="form-control" id="naContactRole" placeholder="CEO, CTO, …">
+        </div>
+      </div>
+
+      <div class="modal-row">
+        <span class="field-label">Notas adicionales (opcional)</span>
+        <textarea class="form-control" id="naNotes" rows="2"></textarea>
+      </div>
+
+      <!-- Solo visible para admin: opción de saltarse el descargo -->
+      <div class="modal-row" id="naAdminSkipRow" hidden style="border-top:1px solid var(--border);padding-top:14px;margin-top:6px">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="naSkipDescargo" style="width:auto;margin:0">
+          <span><strong>Saltar firma del descargo</strong> <small style="color:var(--text-dim)">(solo admin: la auditoría irá directa al paso de pago)</small></span>
+        </label>
+      </div>
+
+      <div class="login-error" id="naError"></div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="naCancelBtn">Cancelar</button>
+        <button type="submit" class="login-btn" style="width:auto;padding:10px 18px" id="naSubmitBtn">Enviar petición</button>
+      </div>
+    </form>
+
+    <!-- Paso 5: pago de la auditoría (BTCPay o código promo) -->
+    <div id="naStepPago" hidden>
+      <h3 style="margin-top:0">Pago de la auditoría</h3>
+      <p class="hint">Tu petición <strong id="naPagoRef"></strong> ya está firmada digitalmente. Falta el pago para que la plataforma la ejecute.</p>
+
+      <div id="naPrecioBox" style="margin:14px 0;padding:14px;border:1px solid #2a3550;border-radius:6px;background:rgba(0,212,255,0.04)">
+        <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text-dim);margin-bottom:6px">
+          <span>Tarifa base</span><span id="naPrecioRate">—</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text-dim);margin-bottom:6px">
+          <span>Horas estimadas</span><span id="naPrecioHoras">—</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text-dim);margin-bottom:6px">
+          <span>Multiplicador tipo</span><span id="naPrecioMultTipo">—</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text-dim);margin-bottom:6px">
+          <span>Multiplicador prioridad</span><span id="naPrecioMultPrio">—</span>
+        </div>
+        <hr style="border:0;border-top:1px solid #2a3550;margin:10px 0">
+        <div style="display:flex;justify-content:space-between;font-size:18px;font-weight:600">
+          <span>Total</span><span id="naPrecioTotal" style="color:var(--accent)">—</span>
+        </div>
+      </div>
+
+      <div class="modal-row">
+        <span class="field-label">Código promocional (opcional)</span>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="naPromoInput" class="form-control" placeholder="Código de descuento aquí" style="flex:1">
+          <button type="button" class="btn-secondary" id="naPromoApplyBtn" style="padding:8px 14px">Aplicar</button>
+        </div>
+        <small class="hint" id="naPromoStatus"></small>
+      </div>
+
+      <div class="login-error" id="naPagoError"></div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="naPagoSkipBtn">Pagar más tarde</button>
+        <button type="button" class="login-btn" id="naPagoBtn" style="width:auto;padding:10px 18px">Pagar con BTC</button>
+      </div>
+    </div>
+
+    <!-- Paso 4: firma del descargo (PAdES con AutoFirma) -->
+    <div id="naStepFirma" hidden>
+      <h3 style="margin-top:0">Firma del descargo de responsabilidad</h3>
+      <p class="hint">Tu petición <strong id="naFirmaRef"></strong> está creada pero <em>aún no se ejecutará</em>. Para autorizar legalmente la auditoría, firma el descargo con tu certificado FNMT o Cl@ve.</p>
+      <ol class="hint" style="padding-left:20px;line-height:1.7">
+        <li><a href="#" id="naDownloadDescargoBtn">Descarga el PDF del descargo</a> (se rellena con los datos de la petición).</li>
+        <li>Ábrelo con <a href="https://firmaelectronica.gob.es/Home/Descargas.html" target="_blank" rel="noopener">AutoFirma</a> y firma con tu certificado <strong>FNMT</strong> o <strong>Cl@ve</strong> (formato <strong>PAdES</strong>, nivel B-LT recomendado).</li>
+        <li>Sube el PDF firmado aquí abajo. Verificamos la firma contra la cadena raíz FNMT-RCM antes de desbloquear la auditoría.</li>
+      </ol>
+
+      <div id="naCifBox" hidden style="margin:14px 0;padding:12px;border:1px dashed #c33;border-radius:6px;background:rgba(204,51,51,0.05)">
+        <p style="margin:0 0 8px 0;color:#c33"><strong>Falta el CIF/NIF de la empresa.</strong> Es obligatorio para que el descargo tenga validez legal.</p>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="naCifInput" class="form-control" placeholder="Ej: B12345678" maxlength="20" style="flex:1">
+          <button type="button" class="login-btn" id="naCifSaveBtn" style="width:auto;padding:8px 14px">Guardar</button>
+        </div>
+      </div>
+
+      <div class="modal-row" style="margin-top:16px">
+        <span class="field-label">PDF firmado</span>
+        <div id="naDescargoDrop" class="drop-zone" style="cursor:pointer">
+          <div class="drop-zone-idle">
+            <span class="drop-zone-icon">📄</span>
+            <span class="drop-zone-text">Arrastra aquí el PDF firmado o pulsa para seleccionar</span>
+            <span class="drop-zone-hint">Solo PDFs firmados con AutoFirma (PAdES)</span>
+          </div>
+          <div class="drop-zone-loading" hidden>
+            <div class="upload-bar"><div class="upload-bar-fill" id="naDescargoBar"></div></div>
+            <span class="upload-status" id="naDescargoStatus">Subiendo…</span>
+          </div>
+          <div class="drop-zone-done" hidden>
+            <span class="drop-zone-icon">✅</span>
+            <span class="drop-zone-text" id="naDescargoDoneText">Firma válida</span>
+            <small class="drop-zone-hint" id="naDescargoSigner"></small>
+          </div>
+          <input type="file" id="naDescargoFile" accept="application/pdf,.pdf" hidden>
+        </div>
+      </div>
+
+      <div class="login-error" id="naFirmaError"></div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="naFirmaSkipBtn">Firmar más tarde</button>
+        <button type="button" class="login-btn" id="naFirmaCloseBtn" style="width:auto;padding:10px 18px" hidden>Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────── JS ─────────────── -->
+<script src="/admin.js"></script>
+
+<!-- Widgets Turnstile visibles: 1 dentro de loginForm + 1 dentro de signupForm.
+     Render automático por la clase cf-turnstile cuando carga turnstile/v0/api.js. -->
+</body>
+</html>

@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Calendario de Auditorías</title>
+
+<!-- FullCalendar v6 -->
+<link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Syne:wght@600;700;800&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg:       #04080f;
+    --surface:  #080e1a;
+    --surface2: #0d1625;
+    --border:   #1a2a40;
+    --border-bright: #1e3a5f;
+    --accent:   #00d4ff;
+    --accent2:  #0066cc;
+    --text:     #e8f2ff;
+    --text-dim: #6b8aad;
+    --danger:   #e74c3c;
+    --warn:     #f39c12;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    min-height: 100vh;
+  }
+
+  /* ── Login overlay ── */
+  .login-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .login-overlay.hidden { display: none; }
+
+  .login-box {
+    background: var(--surface);
+    border: 1px solid var(--border-bright);
+    border-radius: 8px;
+    padding: 40px;
+    width: 100%;
+    max-width: 360px;
+    box-shadow: 0 0 40px rgba(0,212,255,0.05);
+  }
+
+  .login-logo {
+    text-align: center;
+    margin-bottom: 32px;
+  }
+  .login-logo h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+  }
+  .login-logo p {
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-top: 6px;
+  }
+
+  .login-field { margin-bottom: 16px; }
+  .login-field label {
+    display: block;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  .login-field input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    padding: 10px 12px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .login-field input:focus { border-color: var(--accent); }
+
+  /* Botón ojito para mostrar/ocultar password — añadido 2026-05-04 */
+  .login-pass-wrap { position: relative; }
+  .login-pass-wrap input { padding-right: 40px; }
+  .login-pass-toggle {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    color: var(--text-dim);
+    padding: 4px 8px;
+    font-size: 16px;
+    line-height: 1;
+    user-select: none;
+    transition: color 0.15s;
+  }
+  .login-pass-toggle:hover { color: var(--text); }
+  .login-pass-toggle:focus { outline: none; color: var(--accent); }
+
+  .login-error {
+    font-size: 11px;
+    color: var(--danger);
+    min-height: 18px;
+    margin-bottom: 12px;
+  }
+
+  .login-btn {
+    width: 100%;
+    background: var(--accent2);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 12px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .login-btn:hover:not(:disabled) { background: #0077ee; }
+  .login-btn:disabled { opacity: 0.5; cursor: default; }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  header h1 {
+    font-family: 'Syne', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+  }
+  header span {
+    font-size: 11px;
+    color: var(--text-dim);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 3px 10px;
+    border-radius: 4px;
+  }
+  .logout-btn {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-dim);
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 12px;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.05em;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .logout-btn:hover { color: var(--danger); border-color: var(--danger); }
+
+  /* ── Layout ── */
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 24px;
+    padding: 24px 32px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  /* ── FullCalendar overrides ── */
+  .fc {
+    --fc-border-color: var(--border);
+    --fc-page-bg-color: var(--surface);
+    --fc-neutral-bg-color: var(--surface2);
+    --fc-list-event-hover-bg-color: var(--surface2);
+    --fc-today-bg-color: rgba(0, 212, 255, 0.05);
+    --fc-event-border-color: transparent;
+    --fc-button-bg-color: var(--surface2);
+    --fc-button-border-color: var(--border);
+    --fc-button-hover-bg-color: var(--accent2);
+    --fc-button-hover-border-color: var(--accent2);
+    --fc-button-active-bg-color: var(--accent2);
+    --fc-button-active-border-color: var(--accent2);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+  }
+  .fc .fc-toolbar-title { font-family: 'Syne', sans-serif; font-size: 16px; color: var(--text); }
+  .fc .fc-col-header-cell { background: var(--surface2); }
+  .fc .fc-col-header-cell-cushion { color: var(--text-dim); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; text-decoration: none; }
+  .fc .fc-daygrid-day-number { color: var(--text-dim); text-decoration: none; font-size: 11px; }
+  .fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number { color: var(--accent); }
+  .fc .fc-event { border-radius: 4px; font-size: 11px; padding: 1px 4px; cursor: pointer; }
+  .fc .fc-event-title { font-weight: 500; }
+  .fc .fc-button { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 12px; }
+  .fc .fc-button-primary:not(:disabled):hover { background: var(--accent2); border-color: var(--accent2); }
+
+  /* ── Panel lateral ── */
+  .sidebar { display: flex; flex-direction: column; gap: 16px; }
+
+  .legend {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .legend h3 {
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 10px; font-size: 12px; margin-bottom: 8px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── Detalle de evento ── */
+  .detail {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    display: none;
+  }
+  .detail.visible { display: block; }
+  .detail h3 { font-family: 'Syne', sans-serif; font-size: 14px; color: var(--accent); margin-bottom: 12px; word-break: break-word; }
+  .detail-row { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+  .detail-label { font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); }
+  .detail-value { font-size: 12px; color: var(--text); }
+
+  .badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 3px; font-weight: 500; }
+  .badge-high   { background: rgba(231,76,60,0.2);  color: #e74c3c; }
+  .badge-medium { background: rgba(243,156,18,0.2); color: #f39c12; }
+  .badge-low    { background: rgba(0,102,204,0.2);  color: #4da6ff; }
+
+  /* ── Lista próximas ── */
+  .upcoming {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .upcoming h3 { font-size: 10px; letter-spacing: 0.15em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 12px; }
+  .upcoming-item {
+    border-left: 3px solid var(--accent2);
+    padding: 6px 10px;
+    margin-bottom: 8px;
+    background: var(--surface2);
+    border-radius: 0 4px 4px 0;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .upcoming-item:hover { background: rgba(0,102,204,0.15); }
+  .upcoming-item-name { font-size: 12px; font-weight: 500; }
+  .upcoming-item-date { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+  .empty { font-size: 12px; color: var(--text-dim); }
+
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<!-- Login overlay — visible por defecto, se oculta tras autenticación correcta -->
+<div id="loginOverlay" class="login-overlay">
+  <div class="login-box">
+    <div class="login-logo">
+      <h1>ConsultorIA</h1>
+      <p>Panel de Administración</p>
+    </div>
+    <form id="loginForm" autocomplete="on" novalidate>
+      <div class="login-field">
+        <label for="loginUser">Usuario</label>
+        <input type="text" id="loginUser" autocomplete="username" spellcheck="false" required>
+      </div>
+      <div class="login-field">
+        <label for="loginPass">Contraseña</label>
+        <div class="login-pass-wrap">
+          <input type="password" id="loginPass" autocomplete="current-password" required>
+          <button type="button" class="login-pass-toggle" id="loginPassToggle"
+                  aria-label="Mostrar / ocultar contraseña" title="Mostrar / ocultar contraseña"
+                  onclick="(function(){var i=document.getElementById('loginPass');var b=document.getElementById('loginPassToggle');if(i.type==='password'){i.type='text';b.textContent='🙈';}else{i.type='password';b.textContent='👁';}})()">👁</button>
+        </div>
+      </div>
+      <div class="login-error" id="loginError"></div>
+      <button type="submit" class="login-btn" id="loginBtn">Acceder →</button>
+    </form>
+  </div>
+</div>
+
+<header>
+  <h1>CALENDARIO DE AUDITORÍAS</h1>
+  <span>Panel de administración</span>
+  <button class="logout-btn" id="logoutBtn" onclick="logout()">Cerrar sesión</button>
+</header>
+
+<div class="layout">
+  <div id="calendar"></div>
+
+  <div class="sidebar">
+    <div class="legend">
+      <h3>Prioridad</h3>
+      <div class="legend-item"><div class="legend-dot" style="background:#e74c3c"></div> Alta</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f39c12"></div> Media</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#0066cc"></div> Normal</div>
+    </div>
+
+    <div class="detail" id="eventDetail">
+      <h3 id="detailTitle">—</h3>
+      <div class="detail-row"><span class="detail-label">Fechas</span><span class="detail-value" id="detailDates">—</span></div>
+      <div class="detail-row"><span class="detail-label">Sector</span><span class="detail-value" id="detailSector">—</span></div>
+      <div class="detail-row"><span class="detail-label">Contacto</span><span class="detail-value" id="detailEmail">—</span></div>
+      <div class="detail-row"><span class="detail-label">Acceso</span><span class="detail-value" id="detailTunnel">—</span></div>
+      <div class="detail-row"><span class="detail-label">Horario</span><span class="detail-value" id="detailSchedule">—</span></div>
+      <div class="detail-row"><span class="detail-label">Prioridad</span><span class="detail-value" id="detailPriority">—</span></div>
+    </div>
+
+    <div class="upcoming">
+      <h3>Próximas auditorías</h3>
+      <div id="upcomingList"><span class="empty">—</span></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const TOKEN_KEY = 'consultor_admin_token';
+
+  // ── Auth helpers ──────────────────────────────────────────────────────────
+  function getToken()  { return sessionStorage.getItem(TOKEN_KEY); }
+  function setToken(t) { sessionStorage.setItem(TOKEN_KEY, t); }
+  function clearToken(){ sessionStorage.removeItem(TOKEN_KEY); }
+
+  function showLogin() { document.getElementById('loginOverlay').classList.remove('hidden'); }
+  function hideLogin() { document.getElementById('loginOverlay').classList.add('hidden'); }
+
+  function logout() {
+    clearToken();
+    if (window._calendar) { window._calendar.destroy(); window._calendar = null; }
+    document.getElementById('eventDetail').classList.remove('visible');
+    document.getElementById('upcomingList').innerHTML = '<span class="empty">—</span>';
+    showLogin();
+  }
+
+  async function fetchWithAuth(url) {
+    const token = getToken();
+    if (!token) { showLogin(); return null; }
+    const r = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+    if (r.status === 401) { clearToken(); showLogin(); return null; }
+    return r;
+  }
+
+  // ── Login form ────────────────────────────────────────────────────────────
+  document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn    = document.getElementById('loginBtn');
+    const errEl  = document.getElementById('loginError');
+    errEl.textContent = '';
+    btn.disabled = true;
+    btn.textContent = 'Verificando…';
+
+    try {
+      const r = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: document.getElementById('loginUser').value,
+          password: document.getElementById('loginPass').value,
+        }),
+      });
+
+      if (r.status === 429) { errEl.textContent = 'Demasiados intentos. Espera un momento.'; return; }
+      if (!r.ok)            { errEl.textContent = 'Credenciales incorrectas.'; return; }
+
+      const { access_token } = await r.json();
+      setToken(access_token);
+      hideLogin();
+      await loadCalendar();
+    } catch {
+      errEl.textContent = 'Error de conexión.';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Acceder →';
+    }
+  });
+
+  // ── Calendario ────────────────────────────────────────────────────────────
+  const fmt = d => d
+    ? new Date(d + 'T00:00:00').toLocaleDateString('es-ES', { day:'2-digit', month:'short', year:'numeric' })
+    : '—';
+
+  function showDetail(event) {
+    const p = event.extendedProps;
+    document.getElementById('detailTitle').textContent    = event.title;
+    document.getElementById('detailSector').textContent   = p.sector   || '—';
+    document.getElementById('detailEmail').textContent    = p.email    || '—';
+    document.getElementById('detailTunnel').textContent   = p.tunnel   || 'No especificado';
+    document.getElementById('detailSchedule').textContent = p.schedule || '—';
+
+    const startStr = event.startStr;
+    let endStr = event.endStr;
+    if (endStr) {
+      const d = new Date(endStr); d.setDate(d.getDate() - 1);
+      endStr = d.toISOString().split('T')[0];
+    }
+    document.getElementById('detailDates').textContent =
+      startStr === endStr || !endStr ? fmt(startStr) : `${fmt(startStr)} → ${fmt(endStr)}`;
+
+    const prio = p.priority || 'low';
+    const labels = { high: 'Alta', medium: 'Media', low: 'Normal' };
+    document.getElementById('detailPriority').innerHTML =
+      `<span class="badge badge-${prio}">${labels[prio] || prio}</span>`;
+
+    document.getElementById('eventDetail').classList.add('visible');
+  }
+
+  function renderUpcoming(events) {
+    const today = new Date(); today.setHours(0,0,0,0);
+    const upcoming = events
+      .filter(e => e.start && new Date(e.start) >= today)
+      .sort((a, b) => new Date(a.start) - new Date(b.start))
+      .slice(0, 6);
+
+    const list = document.getElementById('upcomingList');
+    if (!upcoming.length) {
+      list.innerHTML = '<span class="empty">Sin auditorías próximas</span>';
+      return;
+    }
+    list.innerHTML = upcoming.map(e => `
+      <div class="upcoming-item" data-id="${e.id}">
+        <div class="upcoming-item-name">${e.title}</div>
+        <div class="upcoming-item-date">${fmt(e.start)}</div>
+      </div>
+    `).join('');
+  }
+
+  async function loadCalendar() {
+    const res = await fetchWithAuth('/api/admin/events');
+    if (!res) return;
+
+    const allEvents = await res.json();
+
+    if (window._calendar) { window._calendar.destroy(); }
+
+    const calendarEl = document.getElementById('calendar');
+    const calendar = new FullCalendar.Calendar(calendarEl, {
+      initialView:   'dayGridMonth',
+      locale:        'es',
+      firstDay:      1,
+      height:        'auto',
+      headerToolbar: {
+        left:   'prev,next today',
+        center: 'title',
+        right:  'dayGridMonth,timeGridWeek,listMonth,all',
+      },
+      buttonText: { today: 'Hoy', month: 'Mes', week: 'Semana', list: 'Lista', all: 'Todas' },
+      views: {
+        listAll: { type: 'list', duration: { years: 20 }, buttonText: 'Todas' },
+      },
+      customButtons: {
+        all: { text: 'Todas', click: () => calendar.changeView('listAll', new Date(2020, 0, 1)) },
+      },
+      events: allEvents,
+      eventClick: info => showDetail(info.event),
+      eventDidMount: info => { info.el.title = info.event.title; },
+    });
+
+    window._calendar = calendar;
+    calendar.render();
+    renderUpcoming(allEvents);
+
+    document.getElementById('upcomingList').addEventListener('click', e => {
+      const item = e.target.closest('.upcoming-item');
+      if (!item) return;
+      const ev = allEvents.find(x => x.id === item.dataset.id);
+      if (ev?.start) {
+        calendar.gotoDate(ev.start);
+        const fcEvent = calendar.getEventById(item.dataset.id);
+        if (fcEvent) showDetail(fcEvent);
+      }
+    });
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  document.addEventListener('DOMContentLoaded', async () => {
+    if (!getToken()) { showLogin(); return; }
+    // Verificar que el token sigue siendo válido
+    const res = await fetchWithAuth('/api/admin/events');
+    if (!res) return; // fetchWithAuth ya mostró el login
+    const allEvents = await res.json();
+    hideLogin();
+    // Reutilizar los eventos ya cargados para no hacer doble petición
+    if (window._calendar) window._calendar.destroy();
+    const calendarEl = document.getElementById('calendar');
+    const calendar = new FullCalendar.Calendar(calendarEl, {
+      initialView: 'dayGridMonth', locale: 'es', firstDay: 1, height: 'auto',
+      headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,listMonth,all' },
+      buttonText: { today: 'Hoy', month: 'Mes', week: 'Semana', list: 'Lista', all: 'Todas' },
+      views: { listAll: { type: 'list', duration: { years: 20 }, buttonText: 'Todas' } },
+      customButtons: { all: { text: 'Todas', click: () => calendar.changeView('listAll', new Date(2020, 0, 1)) } },
+      events: allEvents,
+      eventClick: info => showDetail(info.event),
+      eventDidMount: info => { info.el.title = info.event.title; },
+    });
+    window._calendar = calendar;
+    calendar.render();
+    renderUpcoming(allEvents);
+    document.getElementById('upcomingList').addEventListener('click', e => {
+      const item = e.target.closest('.upcoming-item');
+      if (!item) return;
+      const ev = allEvents.find(x => x.id === item.dataset.id);
+      if (ev?.start) {
+        calendar.gotoDate(ev.start);
+        const fcEvent = calendar.getEventById(item.dataset.id);
+        if (fcEvent) showDetail(fcEvent);
+      }
+    });
+  });
+</script>
+</body>
+</html>

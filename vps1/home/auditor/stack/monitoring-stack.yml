@@ -1,0 +1,282 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  Monitoring stack — VPS1 (migrado desde isard 2026-05-11)
+#
+#  Objetivo: stack always-on con Wazuh + Zabbix expuestos por Traefik LE.
+#
+#  Subdominios:
+#    wazuh.laconsultoria.cat   → wazuh-dashboard (443 internal)
+#    zabbix.laconsultoria.cat  → zabbix-web (8080 internal)
+#
+#  Puertos TCP directos (agentes — no pasan por traefik):
+#    1514  — Wazuh agentes
+#    1515  — Wazuh enrolamiento
+#    55000 — Wazuh API REST (interno, no expuesto a internet por firewall)
+#    10051 — Zabbix Server (para agentes)
+#
+#  Redes:
+#    monitoring_internal — overlay interna del stack
+#    consultor_public    — overlay externa (compartida con stack consultor) para Traefik
+#
+#  Bind mounts:
+#    /home/auditor/monitoring/  (certs, configs, ossec.conf)
+#
+#  Despliegue:
+#    docker stack deploy -c monitoring-stack-vps1.yml monitoring
+# ─────────────────────────────────────────────────────────────────────────────
+
+networks:
+  monitoring_internal:
+    driver: overlay
+    internal: true
+  consultor_public:
+    external: true
+
+volumes:
+  wazuh_api_configuration:
+  wazuh_etc:
+  wazuh_logs:
+  wazuh_queue:
+  wazuh_var_multigroups:
+  wazuh_integrations:
+  wazuh_active_response:
+  wazuh_agentless:
+  wazuh_wodles:
+  filebeat_etc:
+  filebeat_var:
+  wazuh_indexer_data:
+  zabbix_postgres_data:
+
+services:
+
+  # ── Wazuh Indexer (OpenSearch) ─────────────────────────────────────────────
+  wazuh-indexer:
+    image: wazuh/wazuh-indexer:4.14.5
+    environment:
+      - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
+      - bootstrap.memory_lock=true
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=<REDACTED>
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - wazuh_indexer_data:/var/lib/wazuh-indexer
+      - /home/auditor/monitoring/wazuh-indexer.yml:/usr/share/wazuh-indexer/opensearch.yml:ro
+      - /home/auditor/monitoring/certs/wazuh-indexer.pem:/usr/share/wazuh-indexer/certs/wazuh-indexer.pem:ro
+      - /home/auditor/monitoring/certs/wazuh-indexer-key.pem:/usr/share/wazuh-indexer/certs/wazuh-indexer-key.pem:ro
+      - /home/auditor/monitoring/certs/root-ca.pem:/usr/share/wazuh-indexer/certs/root-ca.pem:ro
+      - /home/auditor/monitoring/certs/admin.pem:/usr/share/wazuh-indexer/certs/admin.pem:ro
+      - /home/auditor/monitoring/certs/admin-key.pem:/usr/share/wazuh-indexer/certs/admin-key.pem:ro
+      - /home/auditor/monitoring/internal_users.yml:/usr/share/wazuh-indexer/opensearch-security/internal_users.yml:ro
+    networks:
+      - monitoring_internal
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: any
+        delay: 10s
+      resources:
+        limits:
+          memory: 3G
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sk https://localhost:9200 -u admin:<REDACTED> | grep -q wazuh-cluster"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── Wazuh Manager ──────────────────────────────────────────────────────────
+  wazuh-manager:
+    image: wazuh/wazuh-manager:4.14.5
+    environment:
+      - INDEXER_URL=https://wazuh-indexer:9200
+      - INDEXER_USERNAME=admin
+      - INDEXER_PASSWORD=<REDACTED>
+      - FILEBEAT_SSL_VERIFICATION_MODE=none
+      - API_USERNAME=wazuh-wui
+      - API_PASSWORD=<REDACTED>
+    volumes:
+      - wazuh_api_configuration:/var/ossec/api/configuration
+      - wazuh_etc:/var/ossec/etc
+      - wazuh_logs:/var/ossec/logs
+      - wazuh_queue:/var/ossec/queue
+      - wazuh_var_multigroups:/var/ossec/var/multigroups
+      - wazuh_integrations:/var/ossec/integrations
+      - wazuh_active_response:/var/ossec/active-response/bin
+      - wazuh_agentless:/var/ossec/agentless
+      - wazuh_wodles:/var/ossec/wodles
+      - filebeat_etc:/etc/filebeat
+      - filebeat_var:/var/lib/filebeat
+      - /home/auditor/monitoring/certs/root-ca.pem:/etc/ssl/root-ca.pem:ro
+      - /home/auditor/monitoring/certs/wazuh-manager.pem:/etc/ssl/filebeat.pem:ro
+      - /home/auditor/monitoring/certs/wazuh-manager-key.pem:/etc/ssl/filebeat.key:ro
+      - /home/auditor/monitoring/ossec.conf:/wazuh-config-mount/etc/ossec.conf:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - target: 1514
+        published: 1514
+        protocol: tcp
+        mode: host
+      - target: 1515
+        published: 1515
+        protocol: tcp
+        mode: host
+      - target: 55000
+        published: 55000
+        protocol: tcp
+        mode: host
+    networks:
+      - monitoring_internal
+      - consultor_public
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: any
+        delay: 15s
+      resources:
+        limits:
+          memory: 1G
+
+  # ── Wazuh Dashboard ────────────────────────────────────────────────────────
+  wazuh-dashboard:
+    image: wazuh/wazuh-dashboard:4.14.5
+    environment:
+      - INDEXER_USERNAME=admin
+      - OPENSEARCH_HOSTS=https://wazuh-indexer:9200
+      - INDEXER_PASSWORD=<REDACTED>
+      - WAZUH_API_URL=https://wazuh-manager
+      - DASHBOARD_USERNAME=kibanaserver
+      - DASHBOARD_PASSWORD=<REDACTED>
+      - API_USERNAME=wazuh-wui
+      - API_PASSWORD=<REDACTED>
+      - SERVER_SSL_ENABLED=false
+    volumes:
+      - /home/auditor/monitoring/certs/wazuh-dashboard.pem:/etc/wazuh-dashboard/certs/dashboard.pem:ro
+      - /home/auditor/monitoring/dashboard-config/opensearch_dashboards.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml:ro
+      - /home/auditor/monitoring/certs/wazuh-dashboard-key.pem:/etc/wazuh-dashboard/certs/dashboard-key.pem:ro
+      - /home/auditor/monitoring/certs/root-ca.pem:/etc/wazuh-dashboard/certs/root-ca.pem:ro
+    networks:
+      - monitoring_internal
+      - consultor_public
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: any
+        delay: 20s
+      resources:
+        limits:
+          memory: 512M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.wazuh.rule=Host(`wazuh.laconsultoria.cat`)"
+        - "traefik.http.routers.wazuh.entrypoints=websecure"
+        - "traefik.http.routers.wazuh.tls=true"
+        - "traefik.http.routers.wazuh.tls.certresolver=le"
+        - "traefik.http.services.wazuh.loadbalancer.server.port=5601"
+        - "traefik.docker.network=consultor_public"
+
+  # ── Zabbix PostgreSQL ──────────────────────────────────────────────────────
+  zabbix-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: zabbix
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: <REDACTED>
+    volumes:
+      - zabbix_postgres_data:/var/lib/postgresql/data
+    networks:
+      - monitoring_internal
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: any
+        delay: 5s
+      resources:
+        limits:
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zabbix -d zabbix"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Zabbix Server ──────────────────────────────────────────────────────────
+  zabbix-server:
+    image: zabbix/zabbix-server-pgsql:7.0-ubuntu-latest
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: <REDACTED>
+      POSTGRES_DB: zabbix
+      ZBX_STARTPOLLERS: 5
+      ZBX_STARTPOLLERSUNREACHABLE: 2
+      ZBX_STARTTRAPPERS: 5
+      ZBX_STARTDISCOVERERS: 2
+    ports:
+      - target: 10051
+        published: 10051
+        protocol: tcp
+        mode: host
+    networks:
+      - monitoring_internal
+      - consultor_public
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: any
+        delay: 10s
+      resources:
+        limits:
+          memory: 512M
+
+  # ── Zabbix Web ─────────────────────────────────────────────────────────────
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-pgsql:7.0-ubuntu-latest
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: <REDACTED>
+      POSTGRES_DB: zabbix
+      ZBX_SERVER_HOST: zabbix-server
+      PHP_TZ: Europe/Madrid
+    networks:
+      - monitoring_internal
+      - consultor_public
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      restart_policy:
+        condition: any
+        delay: 15s
+      resources:
+        limits:
+          memory: 512M
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.zabbix.rule=Host(`zabbix.laconsultoria.cat`)"
+        - "traefik.http.routers.zabbix.entrypoints=websecure"
+        - "traefik.http.routers.zabbix.tls=true"
+        - "traefik.http.routers.zabbix.tls.certresolver=le"
+        - "traefik.http.services.zabbix.loadbalancer.server.port=8080"
+        - "traefik.docker.network=consultor_public"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

@@ -1,0 +1,5 @@
+# CSAR-OPS 2026-05-16: modo 100% local — cero telemetría, sin community blocklist.
+# Decisión del 13/5 documentada en Promptconsultoria §27.3.
+api:
+  server:
+    online_client: null

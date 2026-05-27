@@ -1,0 +1,132 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Stack `pay` — BTCPay Server self-hosted
+# ─────────────────────────────────────────────────────────────────────────────
+# Despliegue: VPS2 (worker, consultor-data). Routing HTTPS vía Traefik en VPS1
+# (manager) usando la red overlay `consultor_public` ya existente.
+#
+# Comandos:
+#   ssh vps1 'docker stack deploy -c ~/stack/pay-stack.yml pay'
+#
+# Persistencia:
+#   /var/lib/pay/{bitcoin,nbxplorer,btcpay,postgres}  (en VPS2)
+#
+# Bitcoin Core arranca en modo pruned 15GB (caben 67GB libres con holgura).
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: "3.8"
+
+services:
+  pay-postgres:
+    image: btcpayserver/postgres:18.1-1
+    environment:
+      POSTGRES_PASSWORD: ${PAY_POSTGRES_PASSWORD}
+      POSTGRES_DB: btcpayserver
+    volumes:
+      # btcpayserver/postgres exige el bind en /var/lib/postgresql (no /data)
+      - /var/lib/pay/postgres:/var/lib/postgresql
+    networks: [pay_internal]
+    deploy:
+      placement:
+        constraints: [node.hostname == consultor-data]
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+
+  bitcoind:
+    image: btcpayserver/bitcoin:31.0
+    environment:
+      BITCOIN_NETWORK: mainnet
+      BITCOIN_EXTRA_ARGS: |
+        prune=15000
+        txindex=0
+        rpcallowip=10.0.0.0/8
+        rpcbind=0.0.0.0
+        whitelist=10.0.0.0/8
+        dbcache=300
+        maxconnections=8
+        maxmempool=100
+    volumes:
+      - /var/lib/pay/bitcoin:/data
+    networks: [pay_internal]
+    deploy:
+      placement:
+        constraints: [node.hostname == consultor-data]
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+
+  nbxplorer:
+    image: nicolasdorier/nbxplorer:2.6.7
+    environment:
+      NBXPLORER_NETWORK: mainnet
+      NBXPLORER_BIND: 0.0.0.0:32838
+      NBXPLORER_TRIMEVENTS: 10000
+      NBXPLORER_SIGNALFILESDIR: /datadir
+      NBXPLORER_CHAINS: btc
+      NBXPLORER_BTCRPCURL: http://bitcoind:43782
+      NBXPLORER_BTCNODEENDPOINT: bitcoind:39388
+      NBXPLORER_POSTGRES: User ID=postgres;Host=pay-postgres;Port=5432;Database=nbxplorer;Password=${PAY_POSTGRES_PASSWORD}
+    volumes:
+      - /var/lib/pay/nbxplorer:/datadir
+      - /var/lib/pay/bitcoin:/root/.bitcoin
+    depends_on: [bitcoind]
+    networks: [pay_internal]
+    deploy:
+      placement:
+        constraints: [node.hostname == consultor-data]
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+
+  btcpayserver:
+    image: btcpayserver/btcpayserver:2.3.9
+    environment:
+      BTCPAY_NETWORK: mainnet
+      BTCPAY_BIND: 0.0.0.0:49392
+      BTCPAY_ROOTPATH: /
+      BTCPAY_HOST: pay.laconsultoria.cat
+      BTCPAY_HTTPS: "false"
+      # Estamos detras de Traefik que termina TLS. Sin esto, BTCPay marca
+      # las cookies con scheme=http y el navegador (que esta en https) las
+      # descarta -> bucle a /login.
+      BTCPAY_USEXFORWARDEDPROTO: "true"
+      BTCPAY_CHAINS: btc
+      BTCPAY_BTCEXPLORERURL: http://nbxplorer:32838
+      BTCPAY_POSTGRES: User ID=postgres;Host=pay-postgres;Port=5432;Application Name=btcpayserver;MaxPoolSize=20;Database=btcpayserver;Password=${PAY_POSTGRES_PASSWORD}
+      BTCPAY_DEBUGLOG: btcpay.log
+      BTCPAY_TORRCFILE: ""
+      BTCPAY_DOCKERDEPLOYMENT: "false"
+      BTCPAY_NETWORK_BTCEXPLORERPOSTGRES: User ID=postgres;Host=pay-postgres;Port=5432;Application Name=nbxplorer;Database=nbxplorer;Password=${PAY_POSTGRES_PASSWORD}
+    volumes:
+      - /var/lib/pay/btcpay:/datadir
+      - /var/lib/pay/nbxplorer:/root/.nbxplorer
+    depends_on:
+      - nbxplorer
+      - pay-postgres
+    networks:
+      - pay_internal
+      - consultor_public
+    deploy:
+      placement:
+        constraints: [node.hostname == consultor-data]
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=consultor_public
+        - traefik.http.routers.pay.rule=Host(`pay.laconsultoria.cat`)
+        - traefik.http.routers.pay.entrypoints=websecure
+        - traefik.http.routers.pay.tls=true
+        - traefik.http.routers.pay.tls.certresolver=le
+        - traefik.http.services.pay.loadbalancer.server.port=49392
+        # web→websecure redirect ya activo a nivel de entrypoint en Traefik;
+        # no hace falta definir router HTTP aquí.
+
+networks:
+  pay_internal:
+    driver: overlay
+    attachable: false
+  consultor_public:
+    external: true
+    name: consultor_public

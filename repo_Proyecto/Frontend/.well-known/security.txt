@@ -1,0 +1,4 @@
+Contact: mailto:contacto@laconsultoria.cat
+Expires: 2027-05-18T00:00:00.000Z
+Preferred-Languages: es, en
+Canonical: https://www.laconsultoria.cat/.well-known/security.txt

@@ -1,0 +1,56 @@
+version: "3.9"
+
+networks:
+  internal:
+    driver: overlay
+    internal: true
+  public:
+    driver: overlay
+
+services:
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    networks:
+      - internal
+      - public
+    ports:
+      - "9000:9000"   # API S3-compatible
+      - "9001:9001"   # Consola web (http://localhost:9001)
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin123}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  minio_init:
+    image: minio/mc:latest
+    networks:
+      - internal
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin123}
+      MINIO_BUCKET: ${MINIO_BUCKET:-audit-files}
+    entrypoint: >
+      /bin/sh -c "
+        until mc alias set local http://minio:9000 $$MINIO_ACCESS_KEY $$MINIO_SECRET_KEY; do
+          echo 'Esperando MinIO...'; sleep 3;
+        done;
+        mc mb --ignore-existing local/$$MINIO_BUCKET;
+        mc anonymous set none local/$$MINIO_BUCKET;
+        echo 'Bucket $$MINIO_BUCKET listo.';
+        exit 0;
+      "
+    deploy:
+      restart_policy:
+        condition: on-failure
+        max_attempts: 5
+
+volumes:
+  minio_data:

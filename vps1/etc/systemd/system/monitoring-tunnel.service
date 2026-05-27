@@ -1,0 +1,21 @@
+# /etc/systemd/system/monitoring-tunnel.service
+[Unit]
+Description=Monitoring tunnel VPS1 -> VPS3 (wazuh 1514+1515, zabbix 10051, crowdsec LAPI 8080)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=auditor
+ExecStart=/usr/bin/ssh -N \
+  -o ServerAliveInterval=10 -o ServerAliveCountMax=3 \
+  -o StrictHostKeyChecking=accept-new \
+  -o ExitOnForwardFailure=yes \
+  -i /home/auditor/.ssh/id_ed25519 \
+  -L 127.0.0.1:1514:127.0.0.1:1514 \
+  -L 127.0.0.1:1515:127.0.0.1:1515 \
+  -L 127.0.0.1:10051:127.0.0.1:10051 \
+  -L 127.0.0.1:8080:127.0.0.1:8080 \
+  -p 50022 auditor@198.51.100.87
+Restart=always
+RestartSec=10

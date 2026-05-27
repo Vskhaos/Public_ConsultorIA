@@ -1,0 +1,31 @@
+version: "3.8"
+
+# Postgres local con pgvector para el memory store del orchestrator
+# (findings indexables de auditorías previas — recall semántico Red + Critic).
+# Ports en mode:host porque la overlay del swarm local solo tiene 1 nodo y
+# accedemos desde el host (uvicorn fuera del swarm).
+
+services:
+  memory-postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: memory
+      POSTGRES_USER: memory
+      POSTGRES_PASSWORD: <REDACTED>
+    volumes:
+      - memory_pgdata:/var/lib/postgresql/data
+    ports:
+      - target: 5432
+        published: 5433
+        protocol: tcp
+        mode: host
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+      resources:
+        limits:
+          memory: 1G
+
+volumes:
+  memory_pgdata:

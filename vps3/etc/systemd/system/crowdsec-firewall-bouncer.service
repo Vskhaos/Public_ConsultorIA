@@ -1,0 +1,18 @@
+[Unit]
+Description=The firewall bouncer for CrowdSec
+After=syslog.target network.target remote-fs.target nss-lookup.target crowdsec.service
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/crowdsec-firewall-bouncer -c /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml
+ExecStartPre=/usr/bin/crowdsec-firewall-bouncer -c /etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml -t
+ExecStartPost=/bin/sleep 0.1
+Restart=always
+RestartSec=10
+LimitNOFILE=65536
+# don't send a termination signal to the children processes,
+# because the iptables backend needs to run ipset multiple times to properly shutdown
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target
