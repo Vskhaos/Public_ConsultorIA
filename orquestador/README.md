@@ -324,124 +324,32 @@ ningún otro fichero que llame al LLM.
 
 ## Memoria semántica (kNN sobre embeddings)
 
-`utils/memory_store.py` indexa texto técnico en pgvector y, dado una query,
-devuelve los K fragmentos más similares por coseno. Es uno de los puntos
-del sistema más fáciles de malinterpretar, así que esta sección entra al
-detalle: **para qué se usa exactamente y cuándo aporta valor**.
+`utils/memory_store.py` indexa texto técnico en pgvector y, dado una
+query, devuelve los K fragmentos más similares por coseno.
 
-### Para qué NO se usa
+**Para qué se usa.** Dos casos:
+1. **Continuidad entre fases del mismo engagement** — al pasar a fase N+1,
+   `retrieve(query=phase, ref, k=3)` recupera 3 chunks de fases previas
+   (p. ej. "puerto 21 con vsftpd 2.3.4" descubierto en Reconocimiento
+   reaparece en Análisis de vulnerabilidades).
+2. **Reuso entre engagements distintos** — auditorías futuras contra el
+   mismo `objetivo` o tipo de target arrancan con chunks de corridas
+   anteriores (exploits que funcionaron, errores típicos).
 
-- **No** alimenta el dossier "actual" del engagement en curso. El dossier
-  destilado por `intel.py` se guarda entero en `state_manager` (RAM, TTL 30
-  min) y `_construir_prompt_inicial` lo mete tal cual en el system+user
-  prompt de cada fase del ReAct. La memoria no fragmenta el dossier para
-  procesarlo dentro de la misma corrida.
-- **No** es una "memoria del modelo". Qwen3-14B no se reentrena entre runs;
-  lo único que cambia entre engagements es el prompt. Por tanto la memoria
-  es solo *prompt engineering disfrazado*: añade contexto extra al input.
-- **No** sustituye a la base de datos del backend. Allí (Postgres del
-  cliente) viven los registros transaccionales (Acceso, empresa, scope, …).
-  Aquí solo viven fragmentos de texto técnico con embedding.
+**Para qué NO se usa.** No fragmenta el dossier de la corrida actual (ese
+va entero en el prompt vía `state_manager` RAM), no reentrena al modelo,
+no sustituye al backend.
 
-### Para qué SÍ se usa
+**Chunking.** Texto se trocea en bloques de 800 chars con 80 de overlap
+antes de embebir. Razón: embeddings de 384 dim (`multilingual-e5-small`)
+sobre textos largos "promedian" temas y discriminan peor; con `k=3` y
+chunks de 800 caben holgados en el budget de 16k tokens; el overlap evita
+cortar frases.
 
-Dos casos concretos donde el agente lee de memoria:
-
-1. **Continuidad entre fases del mismo engagement.** Cuando el bucle pasa
-   de fase N a N+1 (p. ej. de Reconocimiento a Análisis de
-   vulnerabilidades), `memory_store.retrieve(query=phase, ref, k=3)`
-   recupera los 3 chunks más cercanos al *nombre + extras* de la nueva
-   fase. Si Reconocimiento detectó que el puerto 21 corre vsftpd 2.3.4, ese
-   chunk aparece al iniciar la fase de vulnerabilidades. El modelo lo ve y
-   prioriza CVE-2011-2523 sin tener que redescubrirlo por sí mismo.
-2. **Reuso entre engagements distintos.** Si dentro de meses corres una
-   auditoría contra otro Metasploitable2 (o cualquier host con
-   `objetivo='172.30.0.10'`), la búsqueda devuelve chunks de corridas
-   pasadas: hallazgos de exploits que funcionaron, comandos que
-   produjeron buena evidencia, errores típicos del entorno. El agente
-   nuevo arranca con contexto "histórico" sin tener que repetir esfuerzo.
-
-### Cómo trocea (chunking + overlap)
-
-`memory_store.upsert_chunk` recibe el texto completo (dossier, evidencia
-de fase, etc.) y lo trocea en bloques de ~800 caracteres con 80 de overlap
-entre chunks. Cada chunk se embebe por separado y se sube como una fila
-con su vector.
-
-Por qué 800/80 y no "el documento entero":
-
-- **Calidad del embedding.** El modelo
-  [`intfloat/multilingual-e5-small`](https://huggingface.co/intfloat/multilingual-e5-small)
-  produce vectores de 384 dim. Sobre un texto de 5000 caracteres el
-  embedding "promedia" todos los temas que contiene y la búsqueda kNN
-  deja de discriminar bien. A 800 chars el vector representa una idea
-  bastante única (p. ej. "credenciales FTP por defecto"), no un revoltijo.
-- **Coste de contexto.** `retrieve` devuelve `k=3`. Con chunks de 5000
-  chars meterías ~15k chars de contexto extra cada fase, comiéndote el
-  budget de 16k tokens del `max-model-len`. Con 800×3 = 2.4k chars el
-  prompt sigue cabiendo holgado.
-- **Overlap de 80 chars.** Evita partir frases por la mitad: si una
-  observación importante cae justo en el corte, el siguiente chunk la
-  recoge entera y al menos uno de los dos vectores la representa bien.
-
-### Cuándo aporta valor y cuándo es overkill
-
-Esto es importante porque la memoria semántica añade un servicio
-(`pentest_memory` postgres + extensión `vector`) y un modelo embebido
-cargado en el proceso del orquestador (~120 MB residentes). En servidores
-modestos puede ser un coste poco justificado.
-
-Aporta valor cuando:
-
-- Tienes histórico de varias auditorías contra el mismo tipo de objetivo
-  o sector (vuelven los mismos servicios, los mismos exploits útiles, los
-  mismos errores).
-- Las fases son largas y el modelo necesita "recordar" hallazgos de fases
-  anteriores que no están explícitamente en el historial multi-turn del
-  ReAct (porque hubo truncado o cambio de fase).
-- El corpus de texto técnico crece a un tamaño que no cabría todo en el
-  context window (>32k tokens).
-
-Aporta poco (y a veces ruido) cuando:
-
-- Cada engagement es un target único y no hay reuso real entre runs.
-- El dossier es pequeño (cientos de palabras) y entra entero en el prompt
-  sin presión.
-- Los chunks recuperados a veces "tiran del modelo" hacia hipótesis que
-  no aplican a este engagement (cuando la similitud de cosine es alta
-  pero el contexto histórico no es relevante).
-
-`MEMORY_ENABLED=false` (default-ish, configurable en env) desactiva el
-módulo entero sin romper nada del flujo: el ReAct sigue funcionando con
-el dossier completo + el historial multi-turn de la fase. Es una palanca
-honesta para evaluar si la memoria está ayudando en tu instalación
-concreta.
-
-### Schema mínimo
-
-```sql
-CREATE TABLE pentest_memory (
-    id            BIGSERIAL PRIMARY KEY,
-    engagement_id TEXT,
-    fase          TEXT,
-    tipo_engagement TEXT,
-    objetivo      TEXT,
-    texto         TEXT,                    -- plano para debug local
-    texto_enc     BYTEA,                   -- cifrado AES-GCM con clave del orquestador
-    embedding     VECTOR(384) NOT NULL,    -- multilingual-e5-small
-    meta          JSONB DEFAULT '{}',
-    created_at    TIMESTAMPTZ DEFAULT now()
-);
-CREATE INDEX pentest_memory_emb_idx ON pentest_memory
-    USING hnsw (embedding vector_cosine_ops);
-CREATE INDEX pentest_memory_fase_idx ON pentest_memory (fase);
-CREATE INDEX pentest_memory_objetivo_idx ON pentest_memory (objetivo);
-```
-
-`embedding` usa índice HNSW (jerárquico, navegable, pequeño mundo) — el
-estándar moderno para kNN aproximado a escala. Para volúmenes pequeños
-también funcionaría un IVFFlat o incluso una fuerza bruta secuencial; HNSW
-gana cuando crecen las filas a partir de unos miles.
+**Cuándo es overkill.** Añade un Postgres+pgvector y un embedder de
+~120 MB residentes. Si cada engagement es un target único y el dossier
+cabe en el prompt, la memoria mete más ruido que señal. `MEMORY_ENABLED=false`
+desactiva el módulo entero sin romper el flujo del ReAct.
 
 ---
 
