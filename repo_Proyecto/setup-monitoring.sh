@@ -6,19 +6,19 @@ set -e
 SERVER="isard@10.20.30.40"
 REMOTE_DIR="/opt/monitoring"
 
-echo "==> [1/7] Copiando archivos al servidor..."
+echo "==> [1/6] Copiando archivos al servidor..."
 ssh "$SERVER" "sudo mkdir -p $REMOTE_DIR && sudo chown isard:isard $REMOTE_DIR"
 scp monitoring/certs.yml "$SERVER:$REMOTE_DIR/certs.yml"
 scp monitoring/ossec.conf "$SERVER:$REMOTE_DIR/ossec.conf"
 scp monitoring-stack.yml "$SERVER:~/monitoring-stack.yml"
 
-echo "==> [2/7] Configurando parámetros del kernel (Wazuh Indexer necesita vm.max_map_count)..."
+echo "==> [2/6] Configurando parámetros del kernel (Wazuh Indexer necesita vm.max_map_count)..."
 ssh "$SERVER" "
   sudo sysctl -w vm.max_map_count=262144
   grep -q 'vm.max_map_count' /etc/sysctl.conf || echo 'vm.max_map_count=262144' | sudo tee -a /etc/sysctl.conf
 "
 
-echo "==> [3/7] Generando certificados SSL para Wazuh..."
+echo "==> [3/6] Generando certificados SSL para Wazuh..."
 ssh "$SERVER" "
   mkdir -p $REMOTE_DIR/certs
   docker run --rm \
@@ -39,32 +39,17 @@ ssh "$SERVER" "
   echo 'Certificados generados OK'
 "
 
-echo "==> [4/7] Creando red compartida entre stacks..."
+echo "==> [4/6] Creando red compartida entre stacks..."
 ssh "$SERVER" "
   docker network inspect shared_monitoring >/dev/null 2>&1 || \
     docker network create --driver overlay --attachable shared_monitoring
   echo 'Red shared_monitoring lista'
 "
 
-echo "==> [5/7] Desplegando stack de monitorización..."
+echo "==> [5/6] Desplegando stack de monitorización..."
 ssh "$SERVER" "docker stack deploy -c ~/monitoring-stack.yml monitoring --with-registry-auth"
 
-echo "==> [6/7] Instalando Suricata en el host..."
-ssh "$SERVER" "
-  sudo apt-get update -qq
-  sudo apt-get install -y suricata
-  # Configurar interfaz de red
-  sudo sed -i 's/interface: eth0/interface: enp1s0/' /etc/suricata/suricata.yaml
-  sudo sed -i 's/# community-id: false/community-id: true/' /etc/suricata/suricata.yaml
-  # Actualizar reglas
-  sudo suricata-update
-  # Habilitar y arrancar
-  sudo systemctl enable suricata
-  sudo systemctl restart suricata
-  echo 'Suricata instalado y arrancado en enp1s0'
-"
-
-echo "==> [7/7] Instalando agentes en el host..."
+echo "==> [6/6] Instalando agentes en el host..."
 ssh "$SERVER" "
   # Wazuh Agent
   wget -qO - https://packages.wazuh.com/key/GPG-KEY-WAZUH | sudo gpg --dearmor -o /usr/share/keyrings/wazuh.gpg

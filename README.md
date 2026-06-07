@@ -6,7 +6,7 @@ auditoría de seguridad asistida por IA** — proyecto de TFM.
 Un orquestador local dirige un agente ofensivo (bucle ReAct sobre un LLM
 Qwen3-14B servido con vLLM) con un revisor adversarial (*Critic*) y un generador
 de informes, sobre una infraestructura de 3 servidores (backend/web, datos+SIEM,
-pagos) endurecida con CrowdSec (IPS), Wazuh (HIDS/SIEM), Suricata (IDS) y Zabbix.
+pagos) endurecida con CrowdSec (IPS), Wazuh (HIDS/SIEM) y Zabbix.
 
 > ⚠️ **Repositorio saneado.** Todas las IPs, puertos sensibles, claves,
 > contraseñas y tokens se han redactado o sustituido por valores ficticios. No
@@ -20,7 +20,7 @@ pagos) endurecida con CrowdSec (IPS), Wazuh (HIDS/SIEM), Suricata (IDS) y Zabbix
 | `orquestador_infra/` | Definiciones de la infra del orquestador (vLLM, contenedor Kali del agente, Redis, MinIO, memoria pgvector). |
 | `orquestador_sistema/` | Capa de sistema del orquestador (units, agentes CrowdSec/Wazuh, hardening SSH/UFW). |
 | `repo_Proyecto/` | Aplicación: API (FastAPI), Admin, Frontend, migraciones SQL, stacks Docker, configs de monitorización. |
-| `vps1/` | Servidor backend/web: stack Swarm, túnel, CrowdSec, **Suricata (IDS)**, runner CI, hardening OS. |
+| `vps1/` | Servidor backend/web: stack Swarm, túnel, CrowdSec, runner CI, hardening OS. |
 | `vps3/` | Servidor de datos + **SIEM/IDS/IPS**: Wazuh (manager + reglas), CrowdSec (LAPI), Zabbix. |
 | `vps4/` | Servidor de pagos: stack BTCPay, monitorización, CrowdSec/Wazuh. |
 
@@ -47,9 +47,6 @@ pagos) endurecida con CrowdSec (IPS), Wazuh (HIDS/SIEM), Suricata (IDS) y Zabbix
     de notificación en `:141` Discord y `:149` Telegram),
     `vps3/var/lib/docker/volumes/monitoring_wazuh_etc/_data/` (rules/, decoders/),
     reglas propias en `orquestador/wazuh_rules/local_rules_critic.xml`.
-  - **IDS (Suricata):** `vps1/etc/suricata/suricata.yaml` (config),
-    `vps1/etc/suricata/rules/` (rulesets), `vps1/etc/suricata/threshold.config`,
-    y el notifier de alertas a Discord `vps1/opt/suricata-discord.sh`.
   - **IPS (CrowdSec):** `vps{1,3,4}/etc/crowdsec/` — LAPI central en VPS3,
     agents+bouncers en los demás (`config.yaml.local`, `profiles.yaml`,
     `scenarios/`, `acquis.d/`).
